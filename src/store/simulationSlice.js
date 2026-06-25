@@ -1,0 +1,80 @@
+import { createSlice } from '@reduxjs/toolkit';
+
+const initialState = {
+  ballCount: 5,
+  gravity: 9.81,
+  mass: 1.0,
+  length: 5.0,
+  restitution: 0.99,
+  isDampingEnabled: true,
+  damping: 0.001,      // Air resistance strength slider
+  ballRadius: 0.5,
+  timeScale: 1.0,      // Time dilation scale
+  liftedBalls: 1,      // Number of balls initially lifted
+  resetVersion: 0,
+  stopVersion: 0,
+};
+
+export const simulationSlice = createSlice({
+  name: 'simulation',
+  initialState,
+  reducers: {
+    setBallCount: (state, action) => {
+      state.ballCount = action.payload;
+      // Ensure liftedBalls doesn't exceed new ballCount - 1
+      if (state.liftedBalls >= state.ballCount) {
+        state.liftedBalls = Math.max(1, state.ballCount - 1);
+      }
+      state.resetVersion += 1;
+    },
+    setGravity: (state, action) => {
+      state.gravity = action.payload;
+    },
+    setMass: (state, action) => {
+      state.mass = action.payload;
+      state.resetVersion += 1; // Re-init engine to apply mass
+    },
+    setLength: (state, action) => {
+      state.length = action.payload;
+      state.resetVersion += 1;
+    },
+    setRestitution: (state, action) => {
+      state.restitution = action.payload;
+    },
+    setDampingEnabled: (state, action) => {
+      state.isDampingEnabled = action.payload;
+    },
+    setDamping: (state, action) => {
+      state.damping = action.payload;
+    },
+    setTimeScale: (state, action) => {
+      state.timeScale = action.payload;
+    },
+    setLiftedBalls: (state, action) => {
+      state.liftedBalls = action.payload;
+      state.resetVersion += 1;
+    },
+    resetSimulation: (state) => {
+      state.resetVersion += 1;
+    },
+    stopSimulation: (state) => {
+      state.stopVersion += 1;
+    },
+  },
+});
+
+export const {
+  setBallCount,
+  setGravity,
+  setMass,
+  setLength,
+  setRestitution,
+  setDampingEnabled,
+  setDamping,
+  setTimeScale,
+  setLiftedBalls,
+  resetSimulation,
+  stopSimulation,
+} = simulationSlice.actions;
+
+export default simulationSlice.reducer;

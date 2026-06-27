@@ -22,14 +22,14 @@ export class NewtonEngine {
    * دالة إعادة ضبط المصنع (تهيئة الكرات بناءً على الإعدادات)
    */
   reinitialize(config) {
-    const { ballCount, length, mass, ballRadius } = config;
+    const { ballCount, lengths, mass, ballRadius } = config;
 
     this.balls = []; // 1. نجهز مصفوفة فارغة
 
     // 2. نفتح حلقة تبدأ من الصفر وتنتهي عند عدد الكرات
     for (let i = 0; i < ballCount; i++) {
       // 3. في كل لفة، ننشئ كرة جديدة
-      let newBall = new PendulumBall(i, ballCount, length, mass, ballRadius);
+      let newBall = new PendulumBall(i, ballCount, lengths[i], mass, ballRadius);
 
       // 4. نضع الكرة داخل المصفوفة
       this.balls.push(newBall);
@@ -54,18 +54,24 @@ export class NewtonEngine {
     // عبر الكرات الوسطى في نفس الإطار الزمني لتنطلق الكرة الأخيرة فوراً.
     const iterations = 10;
     for (let iter = 0; iter < iterations; iter++) {
-      // فحص كل زوج متجاور من الكرات
-      for (let i = 0; i < this.balls.length - 1; i++) {
-        const b1 = this.balls[i];
-        const b2 = this.balls[i + 1];
+      // فحص كل كرة مع جميع الكرات التي تليها
+      for (let i = 0; i < this.balls.length; i++) {
+        for (let j = i + 1; j < this.balls.length; j++) {
+          const b1 = this.balls[i];
+          const b2 = this.balls[j];
 
-        // 1. حساب الموقع الأفقي (X) الحالي لكل كرة باستخدام الهندسة المثلثية
-        const x1 = b1.pivotX + b1.length * Math.sin(b1.theta);
-        const x2 = b2.pivotX + b2.length * Math.sin(b2.theta);
+       // 1. حساب الموقع الأفقي (X)
+       const x1 = b1.pivotX + b1.length * Math.sin(b1.theta);
+       const x2 = b2.pivotX + b2.length * Math.sin(b2.theta);
 
-        // 2. المسافة الحالية بين مركزي الكرتين
-        const distance = x2 - x1;
+       // 2. حساب الموقع العمودي (Y) بافتراض أن سقف التعليق ثابت
+       const y1 = -b1.length * Math.cos(b1.theta);
+       const y2 = -b2.length * Math.cos(b2.theta);
 
+       // 3. حساب المسافة الفعلية بين المركزين (2D Euclidean Distance)
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const distance = Math.sqrt(dx * dx + dy * dy);
         // 3. المسافة الصغرى المسموحة (مجموع نصفي القطرين)
         const minDistance = b1.radius + b2.radius;
 
@@ -91,9 +97,10 @@ export class NewtonEngine {
           // استدعاء دالة الرياضيات لفك التداخل البصري
           // (يتم تفعيلها فقط إذا كان التخامد مفعلاً، للحفاظ على دقة الاختبار الرياضي النقي)
           if (isDampingEnabled) {
-            PhysicsMath.resolveOverlap(b1, b2, minDistance, distance);
+            PhysicsMath.resolveOverlap(b1, b2, minDistance, distance, dx, dy);
           }
         }
+      }
       }
     }
 

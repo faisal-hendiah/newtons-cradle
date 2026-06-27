@@ -7,7 +7,7 @@ const CradleFrame = ({ ballCount, ballRadius, length }) => {
   const height = length + 1.0;
 
   // العمق متوافق تماماً مع حبال البندول (depth = 3)
-  const depth = 3;
+  const depth = 5;
   const thickness = 0.15;
 
   return (

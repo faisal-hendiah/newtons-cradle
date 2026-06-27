@@ -4,7 +4,7 @@ import {
   OrbitControls,
   PerspectiveCamera,
   Environment,
-  ContactShadows,
+  ContactShadows
 } from "@react-three/drei";
 import { useSelector } from "react-redux";
 import { NewtonEngine } from "../physics/Engine";
@@ -14,7 +14,8 @@ import CradleFrame from "./CradleFrame";
 // --- إعداد مدير الصوت المتقدم ---
 class AudioManager {
   constructor() {
-    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    this.audioContext = new (window.AudioContext ||
+      window.webkitAudioContext)();
     this.audioBuffer = null;
     this.isLoaded = false;
     this.loadSound("/clack.mp3");
@@ -49,13 +50,13 @@ class AudioManager {
 const audioManager = new AudioManager();
 
 const Simulation = ({ onGrabChange }) => {
-  const config = useSelector((state) => state.simulation);
+  const config = useSelector(state => state.simulation);
   const engineRef = useRef(null);
   const [ballThetas, setBallThetas] = useState([]);
-  
+
   const grabbedBallRef = useRef(null);
   const thetaOffsetRef = useRef(0);
-  
+
   const { mouse, viewport, camera } = useThree();
 
   useEffect(() => {
@@ -89,23 +90,23 @@ const Simulation = ({ onGrabChange }) => {
     } else {
       engineRef.current.reinitialize(config);
     }
-    setBallThetas(engineRef.current.balls.map((b) => b.theta));
-  }, [config.ballCount, config.length, config.resetVersion]);
+    setBallThetas(engineRef.current.balls.map(b => b.theta));
+  }, [config.ballCount, config.lengths, config.resetVersion]);
 
   useEffect(() => {
     if (engineRef.current && config.stopVersion > 0) {
-      engineRef.current.balls.forEach((b) => {
+      engineRef.current.balls.forEach(b => {
         b.theta = 0;
         b.omega = 0;
         b.alpha = 0;
       });
-      setBallThetas(engineRef.current.balls.map((b) => b.theta));
+      setBallThetas(engineRef.current.balls.map(b => b.theta));
       grabbedBallRef.current = null;
       onGrabChange(false);
     }
   }, [config.stopVersion, onGrabChange]);
 
-  const handlePointerDown = (index) => {
+  const handlePointerDown = index => {
     grabbedBallRef.current = index;
     onGrabChange(true);
 
@@ -113,9 +114,11 @@ const Simulation = ({ onGrabChange }) => {
     const zDepth = camera.position.z;
     const mouseX = (mouse.x * viewport.width * (zDepth / 12)) / 2;
     const dx = mouseX - ball.pivotX;
-    
+
     // حفظ فارق الزاوية لمنع قفزة الكرة عند اللمس
-    const mouseTheta = Math.asin(Math.max(-0.99, Math.min(0.99, dx / config.length)));
+    const mouseTheta = Math.asin(
+      Math.max(-0.99, Math.min(0.99, dx / ball.length))
+    );
     thetaOffsetRef.current = ball.theta - mouseTheta;
   };
 
@@ -128,30 +131,32 @@ const Simulation = ({ onGrabChange }) => {
       document.body.style.cursor = "grabbing";
       const index = grabbedBallRef.current;
       const ball = engineRef.current.balls[index];
-      
+
       const zDepth = camera.position.z;
       const mouseX = (mouse.x * viewport.width * (zDepth / 12)) / 2;
       const dx = mouseX - ball.pivotX;
-      
-      const rawMouseTheta = Math.asin(Math.max(-0.99, Math.min(0.99, dx / config.length)));
+
+      const rawMouseTheta = Math.asin(
+        Math.max(-0.99, Math.min(0.99, dx / ball.length))
+      );
       let targetTheta = rawMouseTheta + thetaOffsetRef.current;
 
       const maxAngle = Math.PI / 3; // تقييد الحركة بـ 60 درجة كحد أقصى
       targetTheta = Math.max(-maxAngle, Math.min(maxAngle, targetTheta));
-      
+
       engineRef.current.setBallTheta(index, targetTheta);
     }
 
     // 2. المحرك الفيزيائي مع خطوة زمنية ثابتة (Fixed Time Step)
     const fixedSubDt = 0.004; // دقة فيزيائية ثابتة (4 ميلي ثانية)
     const renderDelta = delta * config.timeScale;
-    
+
     // حماية ضد تأخر المتصفح (Lag Spike Protection)
-    const contextTime = Math.min(renderDelta, 0.1); 
+    const contextTime = Math.min(renderDelta, 0.1);
     const numberOfSteps = Math.floor(contextTime / fixedSubDt);
 
     let totalCollisions = [];
-    
+
     // تحديث الفيزياء بخطوات متتالية وصارمة
     for (let i = 0; i < numberOfSteps; i++) {
       const stepCollisions = engineRef.current.update(fixedSubDt, config);
@@ -169,11 +174,14 @@ const Simulation = ({ onGrabChange }) => {
     }
 
     // 4. تحديث المصفوفة لإعادة رسم واجهة React
-    setBallThetas(engineRef.current.balls.map((b) => b.theta));
+    setBallThetas(engineRef.current.balls.map(b => b.theta));
   });
 
   useEffect(() => {
-    if (engineRef.current && engineRef.current.balls.length >= config.liftedBalls) {
+    if (
+      engineRef.current &&
+      engineRef.current.balls.length >= config.liftedBalls
+    ) {
       for (let i = 0; i < config.liftedBalls; i++) {
         engineRef.current.setBallTheta(i, -Math.PI / 4);
       }
@@ -185,18 +193,25 @@ const Simulation = ({ onGrabChange }) => {
       <CradleFrame
         ballCount={config.ballCount}
         ballRadius={config.ballRadius}
-        length={config.length}
+        length={Math.max(...config.lengths)}
       />
-      {engineRef.current?.balls.map((ball, i) => (
-        <Pendulum
-          key={i}
-          theta={ballThetas[i] || 0}
-          length={config.length}
-          radius={config.ballRadius}
-          pivotX={ball.pivotX}
-          onPointerDown={() => handlePointerDown(i)}
-        />
-      ))}
+      {config.lengths.slice(0, config.ballCount).map((length, i) => {
+        // حساب موقع التعليق لكل كرة بنفس طريقة المحرك
+        const pivotX =
+          (i - (config.ballCount - 1) / 2) * (config.ballRadius * 2);
+
+        return (
+          <Pendulum
+            key={i}
+            theta={ballThetas[i] || 0}
+            length={length}
+            radius={config.ballRadius}
+            pivotX={pivotX}
+            pivotY={Math.max(...config.lengths)}
+            onPointerDown={() => handlePointerDown(i)}
+          />
+        );
+      })}
     </group>
   );
 };
@@ -228,7 +243,10 @@ const Scene = () => {
         far={4.5}
       />
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.1, 0]} receiveShadow>
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, -1.1, 0]}
+        receiveShadow>
         <planeGeometry args={[100, 100]} />
         <meshStandardMaterial color="#111" roughness={1} />
       </mesh>

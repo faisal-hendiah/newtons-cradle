@@ -4,7 +4,7 @@ const initialState = {
   ballCount: 5,
   gravity: 9.81,
   mass: 1.0,
-  length: 5.0,
+  lengths: [5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0],
   restitution: 0.99,
   isDampingEnabled: true,
   damping: 0.001,      // Air resistance strength slider
@@ -34,8 +34,8 @@ export const simulationSlice = createSlice({
       state.mass = action.payload;
       state.resetVersion += 1; // Re-init engine to apply mass
     },
-    setLength: (state, action) => {
-      state.length = action.payload;
+    setLengths: (state, action) => {
+      state.lengths = action.payload;
       state.resetVersion += 1;
     },
     setRestitution: (state, action) => {
@@ -67,7 +67,7 @@ export const {
   setBallCount,
   setGravity,
   setMass,
-  setLength,
+  setLengths,
   setRestitution,
   setDampingEnabled,
   setDamping,

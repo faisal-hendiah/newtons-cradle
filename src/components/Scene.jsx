@@ -62,7 +62,8 @@ const Simulation = ({ onGrabChange }) => {
   const isDraggingRef = useRef(false); // حالة السحب الفعلية (فقط إذا تحرك الماوس)
   const initialMouseRef = useRef(new THREE.Vector2()); // موضع الماوس الثنائي الأبعاد عند الضغط
 
-  const { mouse } = useThree();
+  const { mouse, camera } = useThree();
+  const dragPlaneRef = useRef(new THREE.Plane());
 
   useEffect(() => {
     const handlePointerUp = () => {
@@ -122,6 +123,18 @@ const Simulation = ({ onGrabChange }) => {
 
     const ball = engineRef.current.balls[index];
     const clickPoint = event.point; // نقطة التقاطع ثلاثية الأبعاد
+
+    // إعداد مستوى السحب (Drag Plane) لمنع القفز العشوائي للحركة
+    if (config.is3DMode) {
+      // وضع 3D: مستوى مواجه للكاميرا يمر بنقطة النقر
+      const normal = new THREE.Vector3();
+      camera.getWorldDirection(normal);
+      normal.negate(); // اتجاه الكاميرا المعاكس
+      dragPlaneRef.current.setFromNormalAndCoplanarPoint(normal, clickPoint);
+    } else {
+      // وضع 2D: مستوى رأسي ثابت عند z = 0
+      dragPlaneRef.current.set(new THREE.Vector3(0, 0, 1), 0);
+    }
     
     // حساب فارق المسافة بين موقع الكرة الفعلي ونقطة اللمس لتفادي القفز المفاجئ
     clickOffsetRef.current.set(
@@ -134,7 +147,7 @@ const Simulation = ({ onGrabChange }) => {
   useFrame((state, delta) => {
     if (!engineRef.current) return;
 
-    // 1. معالجة سحب الكرة بالماوس في الفضاء ثلاثي الأبعاد
+    // 1. معالجة سحب الكرة بالماوس
     if (grabbedBallRef.current !== null) {
       // تفحص ما إذا كان الماوس قد تحرك كفاية لاعتبار العملية سحباً فعلياً
       if (!isDraggingRef.current) {
@@ -147,18 +160,16 @@ const Simulation = ({ onGrabChange }) => {
       if (isDraggingRef.current) {
         document.body.style.cursor = "grabbing";
         const index = grabbedBallRef.current;
-        const ball = engineRef.current.balls[index];
 
-        // إسقاط شعاع الماوس على مستوى أفقي يمر بمستوى تعليق الكرة
+        // إسقاط شعاع الماوس على مستوى السحب المجهز
         const raycaster = state.raycaster;
-        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), ball.length);
         const target = new THREE.Vector3();
-        raycaster.ray.intersectPlane(plane, target);
+        raycaster.ray.intersectPlane(dragPlaneRef.current, target);
 
         // تطبيق الفارق المجموع
         const targetX = target.x + clickOffsetRef.current.x;
         const targetY = target.y + clickOffsetRef.current.y;
-        const targetZ = target.z + clickOffsetRef.current.z;
+        const targetZ = config.is3DMode ? target.z + clickOffsetRef.current.z : 0; // تقييد z لـ 0 في وضع 2D
 
         // تعيين الإحداثيات الهدف للزنبرك بدلاً من تغيير الموقع بشكل فوري صلب
         targetPosRef.current = [targetX, targetY, targetZ];

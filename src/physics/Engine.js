@@ -49,6 +49,7 @@ export class NewtonEngine {
     const { ballCount, lengths, length, mass, masses, ballRadius } = config;
 
     this.balls = [];
+    this.referenceEnergy = null;
 
     // إنشاء قائمة الكرات وتحديد خصائصها الفردية
     for (let i = 0; i < ballCount; i++) {
@@ -65,6 +66,54 @@ export class NewtonEngine {
         ballRadius
       );
       this.balls.push(newBall);
+    }
+  }
+
+  /**
+   * حساب الطاقة الميكانيكية الإجمالية للنظام (الحركية + الكامنة) في 3D/2D
+   * @param {number} gravity - عجلة الجاذبية
+   * @returns {Object} { kinetic, potential, total }
+   */
+  calculateTotalEnergy(gravity) {
+    let kinetic = 0;
+    let potential = 0;
+    this.balls.forEach(ball => {
+      const vx = ball.vel[0];
+      const vy = ball.vel[1];
+      const vz = ball.vel[2];
+      const vSq = vx * vx + vy * vy + vz * vz;
+      kinetic += 0.5 * ball.mass * vSq;
+
+      // الارتفاع عن أدنى نقطة: pos[1] - (-length) = pos[1] + length
+      const h = ball.pos[1] + ball.length;
+      potential += ball.mass * gravity * Math.max(0, h);
+    });
+    return { kinetic, potential, total: kinetic + potential };
+  }
+
+  /**
+   * فرض حفظ الطاقة لمنع الانجراف الحركي وتوقف الكرات عند إيقاف التخميد
+   * @param {number} gravity - عجلة الجاذبية
+   */
+  enforceEnergyConservation(gravity) {
+    if (this.referenceEnergy === null) {
+      this.referenceEnergy = this.calculateTotalEnergy(gravity).total;
+      return;
+    }
+
+    const currentEnergy = this.calculateTotalEnergy(gravity);
+    const energyError = currentEnergy.total - this.referenceEnergy;
+
+    if (Math.abs(energyError) > 0.00001 && currentEnergy.kinetic > 0.0001) {
+      const targetKinetic = currentEnergy.kinetic - energyError;
+      if (targetKinetic > 0) {
+        const correctionFactor = Math.sqrt(targetKinetic / currentEnergy.kinetic);
+        this.balls.forEach(ball => {
+          ball.vel[0] *= correctionFactor;
+          ball.vel[1] *= correctionFactor;
+          ball.vel[2] *= correctionFactor;
+        });
+      }
     }
   }
 
@@ -183,6 +232,19 @@ export class NewtonEngine {
         collisions.push(impact * this.balls[i].mass);
       }
     }
+    // إدارة حفظ الطاقة لمنع الانجراف الحركي (Energy Normalizer)
+    if (grabbedIndex !== null) {
+      this.referenceEnergy = null;
+    } else {
+      if (this.referenceEnergy === null) {
+        this.referenceEnergy = this.calculateTotalEnergy(gravity).total;
+      }
+      // لا نقوم بفرض حفظ الطاقة إلا إذا كانت مقاومة الهواء مغلقة تماماً
+      if (!isDampingEnabled || damping === 0) {
+        this.enforceEnergyConservation(gravity);
+      }
+    }
+
     return collisions;
   }
 

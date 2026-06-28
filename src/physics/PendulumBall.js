@@ -138,7 +138,14 @@ export class PendulumBall {
    * @param {boolean} isDampingEnabled - ما إذا كان تخميد الهواء مفعلاً
    * @param {Array<number>|null} targetPos - إحداثيات موقع مؤشر الماوس لسحب الكرة مرناً [x, y, z]
    */
-  integrate(dt, gravity, damping, isDampingEnabled, targetPos = null, is3DMode = false) {
+  integrate(
+    dt,
+    gravity,
+    damping,
+    isDampingEnabled,
+    targetPos = null,
+    is3DMode = false,
+  ) {
     // 1. حساب قوى مقاومة الهواء والتخامد
     const dragCoeff = isDampingEnabled ? damping / this.mass : 0;
 
@@ -172,36 +179,40 @@ export class PendulumBall {
     this.pos[1] += this.vel[1] * dt;
     this.pos[2] += this.vel[2] * dt;
 
-    // 5. تطبيق قيود طول الخيط (3D Spherical Projection Constraint)
+    // 5. تطبيق قيود طول الخيط (3D/2D Spherical Projection Constraint)
     const px = this.pivotX;
     const py = 0;
     const pz = 0;
 
     const dx = this.pos[0] - px;
     const dy = this.pos[1] - py;
-    const dz = this.pos[2] - pz;
+    const dz = is3DMode ? this.pos[2] - pz : 0;
     const currentDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
     if (currentDist > 0) {
       const ux = dx / currentDist;
       const uy = dy / currentDist;
-      const uz = dz / currentDist;
+      const uz = is3DMode ? dz / currentDist : 0;
 
       // أ. إسقاط الموقع على سطح الكرة للتأكد من ثبات طول الخيط
       this.pos[0] = px + ux * this.length;
       this.pos[1] = py + uy * this.length;
-      this.pos[2] = pz + uz * this.length;
+      this.pos[2] = is3DMode ? pz + uz * this.length : 0;
 
       // ب. إسقاط السرعة لحذف مركبة التمدد الطولية والحفاظ على الحركة المماسية فقط
       const vDotU = this.vel[0] * ux + this.vel[1] * uy + this.vel[2] * uz;
       this.vel[0] -= vDotU * ux;
       this.vel[1] -= vDotU * uy;
-      this.vel[2] -= vDotU * uz;
+      if (is3DMode) {
+        this.vel[2] -= vDotU * uz;
+      } else {
+        this.vel[2] = 0;
+      }
     }
 
     // 6. تطبيق صمامات الأمان
     this.applySafetyConstraints();
-    // 7. تقييد الحركة لـ 2D (تصفير العمق)
+    // 7. تقييد الحركة لـ 2D (تصفير العمق الاحتياطي)
     if (!is3DMode) {
       this.pos[2] = 0;
       this.vel[2] = 0;
@@ -220,7 +231,7 @@ export class PendulumBall {
     if (angle > MAX_THETA) {
       const px = this.pivotX;
       const dx = this.pos[0] - px;
-      const dy = this.pos[1];
+      // const dy = this.pos[1];
       const dz = this.pos[2];
 
       const horizontalDist = Math.sqrt(dx * dx + dz * dz);

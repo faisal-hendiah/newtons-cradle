@@ -1,4 +1,3 @@
-import React from "react";
 
 const CradleFrame = ({ ballCount, ballRadius, length, is3DMode }) => {
   // العرض الأساسي الذي تشغله الكرات وهي متراصة

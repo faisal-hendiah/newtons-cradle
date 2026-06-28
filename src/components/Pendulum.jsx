@@ -1,9 +1,8 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import * as THREE from "three";
 
 const Pendulum = ({
   pos,
-  length,
   radius,
   pivotX,
   pivotY,
@@ -13,7 +12,7 @@ const Pendulum = ({
   const [absX, y, z] = pos;
   const x = absX - pivotX; // التحويل من الإحداثيات العالمية إلى المحلية بالنسبة لـ pivotX
 
-  const frameDepth = 5;
+  const frameDepth = 6;
   const zOffset = frameDepth / 2;
 
   // حساب مواقع واتجاهات الخيوط المزدوجة في الفضاء ثلاثي الأبعاد

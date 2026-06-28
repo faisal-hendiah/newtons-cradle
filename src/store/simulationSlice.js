@@ -1,6 +1,7 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
+  is3DMode: false, // false = 2D Mode, true = 3D Mode
   ballCount: 5,
   gravity: 9.81,
   mass: 1.0,
@@ -20,6 +21,10 @@ export const simulationSlice = createSlice({
   name: 'simulation',
   initialState,
   reducers: {
+    set3DMode: (state, action) => {
+      state.is3DMode = action.payload;
+      state.resetVersion += 1; // إعادة تهيئة النظام عند تغيير النمط
+    },
     setBallCount: (state, action) => {
       state.ballCount = action.payload;
       // Ensure liftedBalls doesn't exceed new ballCount - 1
@@ -91,6 +96,7 @@ export const {
   setDamping,
   setTimeScale,
   setLiftedBalls,
+  set3DMode,
   resetSimulation,
   stopSimulation,
 } = simulationSlice.actions;

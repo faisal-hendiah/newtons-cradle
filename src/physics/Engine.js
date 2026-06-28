@@ -6,26 +6,26 @@ import { PhysicsMath } from "./PhysicsMath.js";
  * كلاس محرك الفيزياء المركزي (NewtonEngine)
  * ============================================================================
  * يمثل هذا الملف العقل المنظم والمشرف على تشغيل المحاكاة الفيزيائية لنواس نيوتن.
- * مسؤوليته الرئيسية هي دمج عجلة الزمن (Integrate time)، اكتشاف التصادمات بين الكرات، 
+ * مسؤوليته الرئيسية هي دمج عجلة الزمن (Integrate time)، اكتشاف التصادمات بين الكرات،
  * وفك التداولات بالإضافة إلى فرض قيود الترتيب ثنائية وثلاثية الأبعاد.
- * 
+ *
  * ----------------------------------------------------------------------------
  * 1. تفاصيل دورة تحديث الفيزياء (Physics Tick Cycle):
  * ----------------------------------------------------------------------------
  *  أ. خطوة التكامل المستقل (Independent Integration Step):
- *     في كل إطار زمني، يتم استدعاء دالة التكامل لكل كرة بشكل مستقل لحساب موقعها الجديد 
- *     بناءً على السرعة والجاذبية الأرضية وتخامد مقاومة الهواء. في حال كانت هناك كرة 
+ *     في كل إطار زمني، يتم استدعاء دالة التكامل لكل كرة بشكل مستقل لحساب موقعها الجديد
+ *     بناءً على السرعة والجاذبية الأرضية وتخامد مقاومة الهواء. في حال كانت هناك كرة
  *     ممسوخة، نمرر لها موقع مؤشر الماوس لتطبيق قوة الجذب المرنة.
- * 
+ *
  *  ب. دورة الإصلاح التكراري للتصادمات (Iterative Collision Resolution):
- *     لضمان انتقال "موجة الزخم الحركي" عبر الكرات الوسيطة فورياً في نفس الإطار الزمني 
- *     (وهو الجوهر الفيزيائي لنواس نيوتن)، نقوم بتكرار عملية فحص وحل التصادمات 10 مرات (10 iterations) 
+ *     لضمان انتقال "موجة الزخم الحركي" عبر الكرات الوسيطة فورياً في نفس الإطار الزمني
+ *     (وهو الجوهر الفيزيائي لنواس نيوتن)، نقوم بتكرار عملية فحص وحل التصادمات 10 مرات (10 iterations)
  *     في كل تحديث. هذا يمنع الكرات من التداخل ويجعل انتقال الطاقة يبدو واقعياً لحظياً.
- * 
+ *
  *  ج. فك التداخل الهندسي (Overlapping Resolution):
- *     تتراكم الكرات في بعض الأحيان بسبب أخطاء التقريب العددي للخطوة الزمنية، لذا يتم استدعاء 
+ *     تتراكم الكرات في بعض الأحيان بسبب أخطاء التقريب العددي للخطوة الزمنية، لذا يتم استدعاء
  *     معالج التداخل الهندسي لدفع الكرات بعيداً عن بعضها بمسافة لا تقل عن مجموع أنصاف أقطارها.
- * 
+ *
  *  د. قيد الترتيب الديناميكي (Order Preservation Constraint):
  *     إذا تم سحب إحدى الكرات، نقوم بفرض قيد يمنع عبورها خلف الكرات المجاورة إذا كانتا على نفس الارتفاع.
  *     يتم فحص المسافة القطرية الجانبية: dist2D = sqrt(dy^2 + dz^2).
@@ -53,9 +53,17 @@ export class NewtonEngine {
     // إنشاء قائمة الكرات وتحديد خصائصها الفردية
     for (let i = 0; i < ballCount; i++) {
       // دعم خيار الكتل والأطوال الفردية لكل كرة على حدة مع توفير بديل احتياطي (Fallback)
-      const ballMass = (masses && masses[i] !== undefined) ? masses[i] : (mass || 1.0);
-      const ballLength = (lengths && lengths[i] !== undefined) ? lengths[i] : (length || 5.0);
-      let newBall = new PendulumBall(i, ballCount, ballLength, ballMass, ballRadius);
+      const ballMass =
+        masses && masses[i] !== undefined ? masses[i] : mass || 1.0;
+      const ballLength =
+        lengths && lengths[i] !== undefined ? lengths[i] : length || 5.0;
+      let newBall = new PendulumBall(
+        i,
+        ballCount,
+        ballLength,
+        ballMass,
+        ballRadius
+      );
       this.balls.push(newBall);
     }
   }
@@ -76,9 +84,24 @@ export class NewtonEngine {
     for (let i = 0; i < this.balls.length; i++) {
       if (i === grabbedIndex && targetPos) {
         // الكرة الممسوكة بالماوس تتحرك تحت تأثير قوى الجاذبية + قوة الزنبرك للمؤشر
-        this.balls[i].integrate(dt, gravity, damping, isDampingEnabled, targetPos);
+        this.balls[i].integrate(
+          dt,
+          gravity,
+          damping,
+          isDampingEnabled,
+          targetPos,
+          params.is3DMode
+        );
       } else {
-        this.balls[i].integrate(dt, gravity, damping, isDampingEnabled, null);
+        // الكرة الحرة
+        this.balls[i].integrate(
+          dt,
+          gravity,
+          damping,
+          isDampingEnabled,
+          null,
+          params.is3DMode
+        );
       }
     }
 
@@ -102,7 +125,9 @@ export class NewtonEngine {
             const dvx = b2.vel[0] - b1.vel[0];
             const dvy = b2.vel[1] - b1.vel[1];
             const dvz = b2.vel[2] - b1.vel[2];
-            const relativeVelocity = Math.sqrt(dvx * dvx + dvy * dvy + dvz * dvz);
+            const relativeVelocity = Math.sqrt(
+              dvx * dvx + dvy * dvy + dvz * dvz
+            );
 
             // حل الصدم ثلاثي الأبعاد
             // نمرر false للمعاملين الأخيرين حتى ترتد الكرة الممسوخة طبيعياً بكتلتها الواقعية
@@ -111,7 +136,7 @@ export class NewtonEngine {
               b2,
               restitution,
               false,
-              false,
+              false
             );
 
             // تسجيل شدة الصدم لتشغيل الصوت الملائم (فقط في التكرار الأول لتفادي تكرار الصوت)
@@ -130,7 +155,7 @@ export class NewtonEngine {
                 dy,
                 dz,
                 false,
-                false,
+                false
               );
             }
           }
@@ -142,7 +167,22 @@ export class NewtonEngine {
     if (grabbedIndex !== null) {
       this.enforceOrderConstraints(grabbedIndex);
     }
-
+    // فحص اصطدام كل كرة مع الستاند المعدني
+    // فحص اصطدام كل كرة مع الستاند المعدني وتسجيل الصوت
+    for (let i = 0; i < this.balls.length; i++) {
+      const impact = PhysicsMath.resolveFrameCollision(
+        this.balls[i], 
+        params.ballCount, 
+        params.ballRadius, 
+        0.6 
+      );
+      
+      // إذا كانت الصدمة قوية بما يكفي (أكبر من 0.1 لتجاهل الاهتزازات الصغيرة)، أضفها لتشغيل الصوت
+      if (impact > 0.1) {
+        // نضرب السرعة بالكتلة لنحصل على الزخم (قوة الصوت)
+        collisions.push(impact * this.balls[i].mass);
+      }
+    }
     return collisions;
   }
 
@@ -226,7 +266,9 @@ export class NewtonEngine {
         // نقوم بفرض الإزاحة الأفقية فقط إذا كان الفارق الجانبي أصغر من مجموع نصفي القطرين
         // (أي أن مسارات الكرات تتقاطع في الفضاء ثلاثي الأبعاد وقد يحدث تصادم)
         if (dist2D < minDistance) {
-          const dxRequired = Math.sqrt(minDistance * minDistance - dist2D * dist2D);
+          const dxRequired = Math.sqrt(
+            minDistance * minDistance - dist2D * dist2D
+          );
           if (x2 - x1 < dxRequired) {
             const targetX2 = x1 + dxRequired;
             b2.pos[0] = targetX2;
@@ -271,7 +313,9 @@ export class NewtonEngine {
         const dist2D = Math.sqrt(dy * dy + dz * dz);
 
         if (dist2D < minDistance) {
-          const dxRequired = Math.sqrt(minDistance * minDistance - dist2D * dist2D);
+          const dxRequired = Math.sqrt(
+            minDistance * minDistance - dist2D * dist2D
+          );
           if (x2 - x1 < dxRequired) {
             const targetX1 = x2 - dxRequired;
             b1.pos[0] = targetX1;

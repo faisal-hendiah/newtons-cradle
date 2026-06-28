@@ -217,6 +217,7 @@ const Simulation = ({ onGrabChange }) => {
         ballCount={config.ballCount}
         ballRadius={config.ballRadius}
         length={Math.max(...config.lengths)}
+        is3DMode={config.is3DMode}
       />
       {config.lengths.slice(0, config.ballCount).map((length, i) => {
         const pivotX =
@@ -230,6 +231,7 @@ const Simulation = ({ onGrabChange }) => {
             radius={config.ballRadius}
             pivotX={pivotX}
             pivotY={Math.max(...config.lengths)}
+            is3DMode={config.is3DMode}
             onPointerDown={(e) => handlePointerDown(i, e)}
           />
         );

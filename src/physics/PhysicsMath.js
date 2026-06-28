@@ -216,4 +216,72 @@ export class PhysicsMath {
       }
     }
   }
+  /**
+   * حل اصطدام الكرات مع إطار الستاند المعدني (Static Boundary Collision)
+   */
+  /**
+   * حل اصطدام الكرات مع إطار الستاند (A-Frame Collision) وتجاهل الفراغات
+   */
+  static resolveFrameCollision(ball, ballCount, ballRadius, restitution) {
+    const coreWidth = (ballCount + 1) * ballRadius * 2;
+    const frameWidth = coreWidth + (ballRadius * 6);
+    const thickness = 0.15;
+    const limitX = (frameWidth / 2) - (thickness / 2);
+
+    // خصائص الستاند لحساب موضع الحديد بدقة
+    const height = ball.length + 1.0;
+    const depth = 6;
+
+    let impactIntensity = 0;
+
+    // حساب المسافة التي يميل بها العمود (Z) بناءً على ارتفاع الكرة الحالي (Y)
+    // بما أن y سالبة وتتجه للأسفل، نأخذ القيمة المطلقة للنسبة
+    const zOffset = Math.abs((ball.pos[1] / height) * (depth / 2));
+    
+    // موقع العمودين الأمامي والخلفي على المحور Z في هذا الارتفاع تحديداً
+    const zFront = zOffset;
+    const zBack = -zOffset;
+    
+    // هامش السماحية (سماكة الحديد + نصف قطر الكرة)
+    const zTolerance = thickness + ballRadius;
+
+    // هل الكرة قريبة من أحد العمودين على المحور Z (أم أنها تمر في الفراغ الأوسط)؟
+    const isHittingPillarZ = Math.abs(ball.pos[2] - zFront) < zTolerance || 
+                             Math.abs(ball.pos[2] - zBack) < zTolerance;
+
+    // فحص التصادم مع الجدار الأيمن بشرط ملامسة الحديد
+    if (ball.pos[0] + ballRadius > limitX && isHittingPillarZ) {
+      impactIntensity = Math.abs(ball.vel[0]); // حفظ السرعة كقوة للصدمة
+      ball.pos[0] = limitX - ballRadius;
+      ball.vel[0] = -Math.abs(ball.vel[0]) * restitution;
+    }
+    // فحص التصادم مع الجدار الأيسر بشرط ملامسة الحديد
+    else if (ball.pos[0] - ballRadius < -limitX && isHittingPillarZ) {
+      impactIntensity = Math.abs(ball.vel[0]); // حفظ السرعة كقوة للصدمة
+      ball.pos[0] = -limitX + ballRadius;
+      ball.vel[0] = Math.abs(ball.vel[0]) * restitution;
+    }
+
+    // إذا حدث اصطدام، نعيد إسقاط السرعة للحفاظ على طول الخيط
+    if (impactIntensity > 0) {
+      const dx = ball.pos[0] - ball.pivotX;
+      const dy = ball.pos[1];
+      const dz = ball.pos[2];
+      const currentDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      if (currentDist > 0) {
+        const ux = dx / currentDist;
+        const uy = dy / currentDist;
+        const uz = dz / currentDist;
+
+        const vDotU = ball.vel[0] * ux + ball.vel[1] * uy + ball.vel[2] * uz;
+        ball.vel[0] -= vDotU * ux;
+        ball.vel[1] -= vDotU * uy;
+        ball.vel[2] -= vDotU * uz;
+      }
+    }
+
+    // إرجاع قوة الصدمة لتشغيل الصوت
+    return impactIntensity;
+  }
 }

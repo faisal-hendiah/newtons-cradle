@@ -138,7 +138,7 @@ export class PendulumBall {
    * @param {boolean} isDampingEnabled - ما إذا كان تخميد الهواء مفعلاً
    * @param {Array<number>|null} targetPos - إحداثيات موقع مؤشر الماوس لسحب الكرة مرناً [x, y, z]
    */
-  integrate(dt, gravity, damping, isDampingEnabled, targetPos = null) {
+  integrate(dt, gravity, damping, isDampingEnabled, targetPos = null, is3DMode = false) {
     // 1. حساب قوى مقاومة الهواء والتخامد
     const dragCoeff = isDampingEnabled ? damping / this.mass : 0;
 
@@ -201,6 +201,11 @@ export class PendulumBall {
 
     // 6. تطبيق صمامات الأمان
     this.applySafetyConstraints();
+    // 7. تقييد الحركة لـ 2D (تصفير العمق)
+    if (!is3DMode) {
+      this.pos[2] = 0;
+      this.vel[2] = 0;
+    }
   }
 
   /**

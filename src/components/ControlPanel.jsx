@@ -9,6 +9,7 @@ import {
   setDamping,
   setTimeScale,
   setLiftedBalls,
+  set3DMode,
   resetSimulation,
   stopSimulation
 } from "../store/simulationSlice";
@@ -23,6 +24,7 @@ import {
   Waves,
   Layers,
   Square,
+  Box,
   Ruler,
   Dna
 } from "lucide-react";
@@ -259,6 +261,26 @@ const ControlPanel = () => {
           <span
             className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
               config.isDampingEnabled ? "translate-x-5.5" : "translate-x-1"
+            }`}
+          />
+        </button>
+      </div>
+
+{/* 2D / 3D Mode Toggle */}
+<div className="flex items-center justify-between py-2 border-t border-white/5 mt-1">
+        <span className="text-xs text-gray-400 font-medium flex items-center gap-1.5">
+          {config.is3DMode ? <Box size={14} /> : <Square size={14} />}
+          Simulation Mode (2D / 3D)
+        </span>
+        <button
+          onClick={() => dispatch(set3DMode(!config.is3DMode))}
+          className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${
+            config.is3DMode ? "bg-blue-600" : "bg-gray-700"
+          }`}
+        >
+          <span
+            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+              config.is3DMode ? "translate-x-5.5" : "translate-x-1"
             }`}
           />
         </button>

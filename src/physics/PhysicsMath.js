@@ -222,58 +222,98 @@ export class PhysicsMath {
   /**
    * حل اصطدام الكرات مع إطار الستاند (A-Frame Collision) وتجاهل الفراغات
    */
+  /**
+   * حل اصطدام الكرات مع إطار الستاند (A-Frame Collision) بدقة متناهية (3D Segment Collision)
+   */
   static resolveFrameCollision(ball, ballCount, ballRadius, restitution) {
     const coreWidth = (ballCount + 1) * ballRadius * 2;
     const frameWidth = coreWidth + (ballRadius * 6);
     const thickness = 0.15;
-    const limitX = (frameWidth / 2) - (thickness / 2);
+    const limitX = frameWidth / 2;
 
-    // خصائص الستاند لحساب موضع الحديد بدقة
     const height = ball.length + 1.0;
     const depth = 6;
-
-    let impactIntensity = 0;
-
-    // حساب المسافة التي يميل بها العمود (Z) بناءً على ارتفاع الكرة الحالي (Y)
-    // بما أن y سالبة وتتجه للأسفل، نأخذ القيمة المطلقة للنسبة
-    const zOffset = Math.abs((ball.pos[1] / height) * (depth / 2));
     
-    // موقع العمودين الأمامي والخلفي على المحور Z في هذا الارتفاع تحديداً
-    const zFront = zOffset;
-    const zBack = -zOffset;
-    
-    // هامش السماحية (سماكة الحديد + نصف قطر الكرة)
-    const zTolerance = thickness + ballRadius;
+    // تعريف الأعمدة الأربعة كقطع مستقيمة في الفضاء الثلاثي [بداية، نهاية]
+    const legs = [
+      { a: [limitX, 0, 0], b: [limitX, -height, depth/2] },   // اليمين الأمامي
+      { a: [limitX, 0, 0], b: [limitX, -height, -depth/2] },  // اليمين الخلفي
+      { a: [-limitX, 0, 0], b: [-limitX, -height, depth/2] }, // اليسار الأمامي
+      { a: [-limitX, 0, 0], b: [-limitX, -height, -depth/2] } // اليسار الخلفي
+    ];
 
-    // هل الكرة قريبة من أحد العمودين على المحور Z (أم أنها تمر في الفراغ الأوسط)؟
-    const isHittingPillarZ = Math.abs(ball.pos[2] - zFront) < zTolerance || 
-                             Math.abs(ball.pos[2] - zBack) < zTolerance;
+    // المسافة المسموحة هي نصف قطر الكرة + نصف سماكة العمود
+    const visualPadding = 0.05; 
+    const combinedRadius = ballRadius + (thickness / 2) + visualPadding;
+    let maxImpact = 0;
 
-    // فحص التصادم مع الجدار الأيمن بشرط ملامسة الحديد
-    if (ball.pos[0] + ballRadius > limitX && isHittingPillarZ) {
-      impactIntensity = Math.abs(ball.vel[0]); // حفظ السرعة كقوة للصدمة
-      ball.pos[0] = limitX - ballRadius;
-      ball.vel[0] = -Math.abs(ball.vel[0]) * restitution;
+    // فحص التصادم مع كل عمود بشكل مستقل
+    for (let leg of legs) {
+      const ax = leg.a[0], ay = leg.a[1], az = leg.a[2];
+      const bx = leg.b[0], by = leg.b[1], bz = leg.b[2];
+      const px = ball.pos[0], py = ball.pos[1], pz = ball.pos[2];
+
+      // متجه العمود (AB) ومتجه الكرة (AP)
+      const abx = bx - ax, aby = by - ay, abz = bz - az;
+      const apx = px - ax, apy = py - ay, apz = pz - az;
+
+      // الإسقاط الشعاعي لإيجاد أقرب نقطة على العمود
+      const dotAP_AB = apx * abx + apy * aby + apz * abz;
+      const dotAB_AB = abx * abx + aby * aby + abz * abz;
+      
+      // حصر النقطة لتكون ضمن طول العمود فقط (بين 0 و 1)
+      let t = Math.max(0, Math.min(1, dotAP_AB / dotAB_AB));
+
+      // إحداثيات أقرب نقطة ملامسة
+      const cx = ax + t * abx;
+      const cy = ay + t * aby;
+      const cz = az + t * abz;
+
+      // حساب المسافة بين مركز الكرة وهذه النقطة
+      const dx = px - cx, dy = py - cy, dz = pz - cz;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      if (dist < combinedRadius && dist > 0) {
+        // تم اختراق العمود!
+        const overlap = combinedRadius - dist;
+        const nx = dx / dist, ny = dy / dist, nz = dz / dist;
+
+        // 1. الدفع الميكانيكي: إخراج الكرة من الحديد
+        ball.pos[0] += nx * overlap;
+        ball.pos[1] += ny * overlap;
+        ball.pos[2] += nz * overlap;
+
+        // 2. الارتداد الفيزيائي: عكس السرعة باتجاه الخارج
+        const vDotN = ball.vel[0] * nx + ball.vel[1] * ny + ball.vel[2] * nz;
+        
+        // تطبيق الصدمة فقط إذا كانت الكرة تتجه نحو العمود
+        if (vDotN < 0) {
+          const impulse = -(1 + restitution) * vDotN;
+          ball.vel[0] += impulse * nx;
+          ball.vel[1] += impulse * ny;
+          ball.vel[2] += impulse * nz;
+          
+          maxImpact = Math.max(maxImpact, Math.abs(impulse));
+        }
+      }
     }
-    // فحص التصادم مع الجدار الأيسر بشرط ملامسة الحديد
-    else if (ball.pos[0] - ballRadius < -limitX && isHittingPillarZ) {
-      impactIntensity = Math.abs(ball.vel[0]); // حفظ السرعة كقوة للصدمة
-      ball.pos[0] = -limitX + ballRadius;
-      ball.vel[0] = Math.abs(ball.vel[0]) * restitution;
-    }
 
-    // إذا حدث اصطدام، نعيد إسقاط السرعة للحفاظ على طول الخيط
-    if (impactIntensity > 0) {
+    // إعادة فرض قيد البندول لحماية الخيط من التمدد بعد الاصطدام
+    if (maxImpact > 0) {
       const dx = ball.pos[0] - ball.pivotX;
       const dy = ball.pos[1];
       const dz = ball.pos[2];
       const currentDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
       if (currentDist > 0) {
-        const ux = dx / currentDist;
-        const uy = dy / currentDist;
-        const uz = dz / currentDist;
+        const ux = dx / currentDist, uy = dy / currentDist, uz = dz / currentDist;
 
+        // إعادة الكرة لمسارها الدائري الصحيح
+        ball.pos[0] = ball.pivotX + ux * ball.length;
+        ball.pos[1] = uy * ball.length;
+        ball.pos[2] = uz * ball.length;
+
+        // إزالة أي سرعة تحاول قطع الخيط
         const vDotU = ball.vel[0] * ux + ball.vel[1] * uy + ball.vel[2] * uz;
         ball.vel[0] -= vDotU * ux;
         ball.vel[1] -= vDotU * uy;
@@ -281,7 +321,6 @@ export class PhysicsMath {
       }
     }
 
-    // إرجاع قوة الصدمة لتشغيل الصوت
-    return impactIntensity;
+    return maxImpact;
   }
 }

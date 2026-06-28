@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from "react";
-import { Canvas, useFrame} from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   OrbitControls,
   PerspectiveCamera,
@@ -52,17 +52,23 @@ const audioManager = new AudioManager();
 
 const Simulation = ({ onGrabChange }) => {
   const config = useSelector(state => state.simulation);
-  const engineRef =  useRef(null) ||null ;
+  const engineRef = null || useRef(null);
   const [ballPositions, setBallPositions] = useState([]);
 
   const grabbedBallRef = useRef(null);
   const clickOffsetRef = useRef(new THREE.Vector3());
   const targetPosRef = useRef(null); // المؤشر الهدف لزنبرك سحب الماوس
+  
+  const isDraggingRef = useRef(false); // حالة السحب الفعلية (فقط إذا تحرك الماوس)
+  const initialMouseRef = useRef(new THREE.Vector2()); // موضع الماوس الثنائي الأبعاد عند الضغط
+
+  const { mouse } = useThree();
 
   useEffect(() => {
     const handlePointerUp = () => {
       grabbedBallRef.current = null;
       targetPosRef.current = null;
+      isDraggingRef.current = false;
       onGrabChange(false);
       document.body.style.cursor = "auto";
 
@@ -103,6 +109,7 @@ const Simulation = ({ onGrabChange }) => {
       setBallPositions(engineRef.current.balls.map(b => [...b.pos]));
       grabbedBallRef.current = null;
       targetPosRef.current = null;
+      isDraggingRef.current = false;
       onGrabChange(false);
     }
   }, [config.stopVersion, onGrabChange]);
@@ -110,6 +117,8 @@ const Simulation = ({ onGrabChange }) => {
   const handlePointerDown = (index, event) => {
     grabbedBallRef.current = index;
     onGrabChange(true);
+    isDraggingRef.current = false; // إعادة ضبط حالة السحب
+    initialMouseRef.current.set(mouse.x, mouse.y); // حفظ الموقع الثنائي للمشهد
 
     const ball = engineRef.current.balls[index];
     const clickPoint = event.point; // نقطة التقاطع ثلاثية الأبعاد
@@ -127,23 +136,33 @@ const Simulation = ({ onGrabChange }) => {
 
     // 1. معالجة سحب الكرة بالماوس في الفضاء ثلاثي الأبعاد
     if (grabbedBallRef.current !== null) {
-      document.body.style.cursor = "grabbing";
-      const index = grabbedBallRef.current;
-      const ball = engineRef.current.balls[index];
+      // تفحص ما إذا كان الماوس قد تحرك كفاية لاعتبار العملية سحباً فعلياً
+      if (!isDraggingRef.current) {
+        const dist = initialMouseRef.current.distanceTo(state.mouse);
+        if (dist > 0.02) { // 2% حركة من مساحة الشاشة لتفادي التحرك بمجرد النقر
+          isDraggingRef.current = true;
+        }
+      }
 
-      // إسقاط شعاع الماوس على مستوى أفقي يمر بمستوى تعليق الكرة
-      const raycaster = state.raycaster;
-      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), ball.length);
-      const target = new THREE.Vector3();
-      raycaster.ray.intersectPlane(plane, target);
+      if (isDraggingRef.current) {
+        document.body.style.cursor = "grabbing";
+        const index = grabbedBallRef.current;
+        const ball = engineRef.current.balls[index];
 
-      // تطبيق الفارق المجموع
-      const targetX = target.x + clickOffsetRef.current.x;
-      const targetY = target.y + clickOffsetRef.current.y;
-      const targetZ = target.z + clickOffsetRef.current.z;
+        // إسقاط شعاع الماوس على مستوى أفقي يمر بمستوى تعليق الكرة
+        const raycaster = state.raycaster;
+        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), ball.length);
+        const target = new THREE.Vector3();
+        raycaster.ray.intersectPlane(plane, target);
 
-      // تعيين الإحداثيات الهدف للزنبرك بدلاً من تغيير الموقع بشكل فوري صلب
-      targetPosRef.current = [targetX, targetY, targetZ];
+        // تطبيق الفارق المجموع
+        const targetX = target.x + clickOffsetRef.current.x;
+        const targetY = target.y + clickOffsetRef.current.y;
+        const targetZ = target.z + clickOffsetRef.current.z;
+
+        // تعيين الإحداثيات الهدف للزنبرك بدلاً من تغيير الموقع بشكل فوري صلب
+        targetPosRef.current = [targetX, targetY, targetZ];
+      }
     }
 
     // 2. المحرك الفيزيائي مع خطوة زمنية ثابتة

@@ -3,37 +3,37 @@
  * كلاس كرة النواس ثلاثية الأبعاد (PendulumBall)
  * ============================================================================
  * يمثل هذا الملف النموذج الرياضي والفيزياي لكرات النواس في الفضاء ثلاثي الأبعاد.
- * يصف هذا الكلاس الخصائص الحركية للكرة (الموقع والسرعة والتسارع) ويطبق معادلات 
+ * يصف هذا الكلاس الخصائص الحركية للكرة (الموقع والسرعة والتسارع) ويطبق معادلات
  * الحركة المقيدة، بالإضافة إلى قوى السحب المغناطيسي/المرن (Spring Joint).
- * 
+ *
  * ----------------------------------------------------------------------------
  * 1. القوانين الفيزيائية المطبقة (Physical Laws Implemented):
  * ----------------------------------------------------------------------------
  *  أ. قانون نيوتن الثاني للحركة (Newton's Second Law of Motion):
  *     F_total = m * a  =>  a = F_total / m
  *     حيث يتم تجميع القوى المؤثرة (الجاذبية، مقاومة الهواء، وسحب الماوس) ثم حساب التسارع.
- * 
+ *
  *  ب. تسارع الجاذبية (Gravitational Acceleration):
  *     a_gravity = [0, -g, 0] (قوة سحب الجاذبية للأسفل على المحور Y).
- * 
+ *
  *  ج. تخامد مقاومة الهواء (Air Resistance Damping):
  *     F_drag = -b * v
  *     حيث يتم حساب التسارع التخميدي بقسمة القوة على الكتلة: a_drag = -(damping / mass) * v.
- * 
+ *
  *  د. قوة سحب الماوس المرنة (Hooke's Spring Joint Law):
- *     عند إمساك الكرة باليد وسحبها، لا يتم تعيين موقعها قسرياً، بل يتم ربطها بـ "زنبرك وهمي" 
+ *     عند إمساك الكرة باليد وسحبها، لا يتم تعيين موقعها قسرياً، بل يتم ربطها بـ "زنبرك وهمي"
  *     يسحبها نحو مؤشر الماوس (targetPos) طبقاً لقانون هوك المعدل مع مخمد اهتزاز:
  *     F_spring = -k * dx - c * v
  *     حيث:
  *     - k: معامل صلابة الزنبرك (Stiffness) ويعبر عن مدى سرعة وقوة استجابة الكرة للماوس.
  *     - c: معامل تخميد الاهتزاز (Damping) لمنع تذبذب الكرة بشكل عشوائي حول مؤشر الماوس.
  *     - dx: ناقل الإزاحة بين الموقع الحالي وموقع الماوس (pos - targetPos).
- * 
+ *
  *  هـ. تكامل أولر شبه الضمني (Semi-implicit Euler Integrator):
  *     طريقة تكامل عددية مستقرة طاقياً (Symplectic) لتحديث السرعة والموقع:
  *     v(t + dt) = v(t) + a(t) * dt
  *     x(t + dt) = x(t) + v(t + dt) * dt
- * 
+ *
  *  و. مبدأ دالمبير وقيود الخيط الصارمة (D'Alembert's Constraint & Spherical Projection):
  *     بما أن الكرة معلقة بخيط غير قابل للتمدد طوله L، يجب ألا تتغير المسافة بين الكرة ونقطة تعليقها.
  *     لذلك نقوم بـ:
@@ -43,7 +43,7 @@
  *     2. إسقاط السرعة (Velocity Projection):
  *        للتخلص من أي سرعة تسحب الكرة خارج مسارها الدائري (تمدد الخيط)، نطرح مركبة السرعة الموازية للخيط:
  *        v_constrained = v - (v . u) * u
- * 
+ *
  *  ز. صمامات الأمان الرياضية (Mathematical Clamping):
  *     لحماية النواس من الدوران الكامل اللانهائي المسبب للأخطاء الرياضية، يتم حساب زاوية التأرجح:
  *     theta = acos(-y / L)
@@ -61,9 +61,9 @@ export class PendulumBall {
    */
   constructor(index, ballCount, length, mass, radius) {
     this.index = index;
-    this.length = length; 
-    this.mass = mass; 
-    this.radius = radius; 
+    this.length = length;
+    this.mass = mass;
+    this.radius = radius;
 
     // حساب نقطة التعليق الأفقية (Pivot X)
     // الكرات توزع بشكل متوازٍ بحيث تتلامس تماماً عند السكون، الفارق بين كل نقطتين هو القطر (2R)
@@ -80,7 +80,7 @@ export class PendulumBall {
    */
   get theta() {
     const dx = this.pos[0] - this.pivotX;
-    const dy = this.pos[1]; 
+    const dy = this.pos[1];
     return Math.atan2(dx, -dy);
   }
 
@@ -104,7 +104,7 @@ export class PendulumBall {
     const dy = this.pos[1];
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist === 0) return 0;
-    
+
     // متجه المماس للدائرة المتشكلة في المستوى XY
     const tx = -dy / dist;
     const ty = dx / dist;
@@ -141,7 +141,7 @@ export class PendulumBall {
   integrate(dt, gravity, damping, isDampingEnabled, targetPos = null) {
     // 1. حساب قوى مقاومة الهواء والتخامد
     const dragCoeff = isDampingEnabled ? damping / this.mass : 0;
-    
+
     let ax = -dragCoeff * this.vel[0];
     let ay = -gravity - dragCoeff * this.vel[1]; // الجاذبية تؤثر للأسفل على المحور Y
     let az = -dragCoeff * this.vel[2];
@@ -149,13 +149,13 @@ export class PendulumBall {
     // 2. تطبيق قوة الزنبرك لسحب الماوس (Spring Pull Force)
     if (targetPos) {
       const k = 250.0; // معامل صلابة الزنبرك (Spring Stiffness coefficient)
-      const c = 15.0;  // معامل تخميد الزنبرك لمنع التذبذب العشوائي
+      const c = 15.0; // معامل تخميد الزنبرك لمنع التذبذب العشوائي
 
       // حساب قوة السحب طبقاً للمسافة والسرعة: F = -k*x - c*v
       const springFx = -k * (this.pos[0] - targetPos[0]) - c * this.vel[0];
       const springFy = -k * (this.pos[1] - targetPos[1]) - c * this.vel[1];
       const springFz = -k * (this.pos[2] - targetPos[2]) - c * this.vel[2];
-      
+
       // تحويل القوة لتسارع: a_spring = F_spring / m
       ax += springFx / this.mass;
       ay += springFy / this.mass;

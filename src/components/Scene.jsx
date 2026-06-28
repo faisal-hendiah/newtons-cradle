@@ -159,7 +159,7 @@ const Simulation = ({ onGrabChange }) => {
 
     // تحديث الفيزياء بخطوات متتالية وصارمة
     for (let i = 0; i < numberOfSteps; i++) {
-      const stepCollisions = engineRef.current.update(fixedSubDt, config);
+      const stepCollisions = engineRef.current.update(fixedSubDt, config, grabbedBallRef.current);
       totalCollisions = [...totalCollisions, ...stepCollisions];
     }
 
@@ -168,7 +168,7 @@ const Simulation = ({ onGrabChange }) => {
       const maxIntensity = Math.max(...totalCollisions);
       const volume = Math.min(maxIntensity / 3, 1.0);
 
-      if (volume > 0.02) {
+      if (volume > 0.05) {
         audioManager.play(volume);
       }
     }

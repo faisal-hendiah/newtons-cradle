@@ -5,6 +5,7 @@ const initialState = {
   gravity: 9.81,
   mass: 1.0,
   lengths: [5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0],
+  masses: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
   restitution: 0.99,
   isDampingEnabled: true,
   damping: 0.001,      // Air resistance strength slider
@@ -32,7 +33,12 @@ export const simulationSlice = createSlice({
     },
     setMass: (state, action) => {
       state.mass = action.payload;
+      state.masses = state.masses.map(() => action.payload);
       state.resetVersion += 1; // Re-init engine to apply mass
+    },
+    setMasses: (state, action) => {
+      state.masses = action.payload;
+      state.resetVersion += 1;
     },
     setLengths: (state, action) => {
       state.lengths = action.payload;
@@ -55,6 +61,17 @@ export const simulationSlice = createSlice({
       state.resetVersion += 1;
     },
     resetSimulation: (state) => {
+      state.ballCount = initialState.ballCount;
+      state.gravity = initialState.gravity;
+      state.mass = initialState.mass;
+      state.lengths = [...initialState.lengths];
+      state.masses = [...initialState.masses];
+      state.restitution = initialState.restitution;
+      state.isDampingEnabled = initialState.isDampingEnabled;
+      state.damping = initialState.damping;
+      state.ballRadius = initialState.ballRadius;
+      state.timeScale = initialState.timeScale;
+      state.liftedBalls = initialState.liftedBalls;
       state.resetVersion += 1;
     },
     stopSimulation: (state) => {
@@ -67,6 +84,7 @@ export const {
   setBallCount,
   setGravity,
   setMass,
+  setMasses,
   setLengths,
   setRestitution,
   setDampingEnabled,

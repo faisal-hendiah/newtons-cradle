@@ -4,6 +4,7 @@ import {
   setBallCount,
   setGravity,
   setMass,
+  setMasses,
   setLengths,
   setRestitution,
   setDampingEnabled,
@@ -139,25 +140,35 @@ const ControlPanel = () => {
         />
       </div>
 
-      {/* Mass */}
-      <div className="flex flex-col gap-2">
-        <div className="flex justify-between text-xs text-gray-400 font-medium">
-          <span className="flex items-center gap-1.5">
-            <Weight size={14} /> Ball Mass
-          </span>
-          <span className="text-blue-400 font-mono">
-            {config.mass.toFixed(1)} kg
-          </span>
+      {/* Ball Masses */}
+      <div className="flex flex-col gap-3 border-b border-white/5 pb-3">
+        <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium">
+          <Weight size={14} /> Ball Masses
         </div>
-        <input
-          type="range"
-          min="0.1"
-          max="5.0"
-          step="0.1"
-          value={config.mass}
-          onChange={e => dispatch(setMass(Number(e.target.value)))}
-          className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-        />
+
+        {config.masses.slice(0, config.ballCount).map((mass, index) => (
+          <div key={index} className="flex flex-col gap-1">
+            <div className="flex justify-between text-[10px] text-gray-500 font-medium">
+              <span>Ball {index + 1}</span>
+              <span className="text-blue-400 font-mono">
+                {mass.toFixed(1)} kg
+              </span>
+            </div>
+            <input
+              type="range"
+              min="0.1"
+              max="5.0"
+              step="0.1"
+              value={mass}
+              onChange={e => {
+                const newMasses = [...config.masses];
+                newMasses[index] = Number(e.target.value);
+                dispatch(setMasses(newMasses));
+              }}
+              className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            />
+          </div>
+        ))}
       </div>
 
       {/* Gravity */}

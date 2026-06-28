@@ -13,7 +13,7 @@ export class PhysicsMath {
    * دالة حل التصادم المرن التام في بعد واحد
    * تعتمد على قانوني: انحفاظ كمية الحركة (Momentum) وانحفاظ الطاقة الحركية (Kinetic Energy)
    */
-  static resolveElasticCollision(ball1, ball2, restitution) {
+  static resolveElasticCollision(ball1, ball2, restitution, ball1Grabbed = false, ball2Grabbed = false) {
     // 1. حساب الموقع (x, y) لكل كرة لحظة التصادم
     const x1 = ball1.pivotX + ball1.length * Math.sin(ball1.theta);
     const y1 = -ball1.length * Math.cos(ball1.theta);
@@ -52,7 +52,7 @@ export class PhysicsMath {
 
     // --- المرحلة الثانية: إسقاط السرعات وتطبيق قانون التصادم ---
 
-    // 1. حساب متجه الوحدة العمودي (Normal Unit Vector)
+    // 1. حساب متجه الوحدة لخط التصادم (Normal Unit Vector)
     // هذا المتجه يمثل "خط التصادم" المباشر بين الكرتين
     const nx = dx / distance;
     const ny = dy / distance;
@@ -71,15 +71,21 @@ export class PhysicsMath {
     const v2t = tx * v2x + ty * v2y;
 
     // 4. تطبيق قانون حفظ الزخم على السرعات العمودية فقط (1D Collision)
-    const m1 = ball1.mass;
-    const m2 = ball2.mass;
-    const totalMomentum = m1 * v1n + m2 * v2n;
+    let v1n_new, v2n_new;
+    if (ball1Grabbed) {
+      v1n_new = v1n; // grabbed ball does not change velocity
+      v2n_new = (1 + restitution) * v1n - restitution * v2n;
+    } else if (ball2Grabbed) {
+      v1n_new = (1 + restitution) * v2n - restitution * v1n;
+      v2n_new = v2n; // grabbed ball does not change velocity
+    } else {
+      const m1 = ball1.mass;
+      const m2 = ball2.mass;
+      const totalMomentum = m1 * v1n + m2 * v2n;
+      v1n_new = (totalMomentum - m2 * restitution * (v1n - v2n)) / (m1 + m2);
+      v2n_new = (totalMomentum + m1 * restitution * (v1n - v2n)) / (m1 + m2);
+    }
 
-    // السرعات العمودية الجديدة بعد الاصطدام
-    const v1n_new =
-      (totalMomentum - m2 * restitution * (v1n - v2n)) / (m1 + m2);
-    const v2n_new =
-      (totalMomentum + m1 * restitution * (v1n - v2n)) / (m1 + m2);
     // --- المرحلة الثالثة: إعادة تركيب السرعات وتحويلها لسرعة زاوية ---
 
     // 1. إعادة تركيب المتجهات: نجمع السرعة العمودية الجديدة مع السرعة المماسية (التي لم تتغير)
@@ -97,20 +103,24 @@ export class PhysicsMath {
       v2x_final * Math.cos(ball2.theta) + v2y_final * Math.sin(ball2.theta);
 
     // 3. تحويل السرعة الخطية النهائية إلى سرعة زاوية لتحديث حالة الكرات
-    ball1.omega = v1_final / ball1.length;
-    ball2.omega = v2_final / ball2.length;
+    if (!ball1Grabbed) {
+      ball1.omega = v1_final / ball1.length;
+    } else {
+      ball1.omega = 0;
+    }
+    if (!ball2Grabbed) {
+      ball2.omega = v2_final / ball2.length;
+    } else {
+      ball2.omega = 0;
+    }
 
     return true; // تمت عملية التصادم بنجاح!
   }
 
   /**
-   * دالة فك التداخل الميكانيكي (Static Collision Resolution)
-   * تستخدم لمنع الكرات من اختراق بعضها البعض في الرسوميات.
-   */
-  /**
    * دالة فك التداخل الميكانيكي (2D Static Collision Resolution)
    */
-  static resolveOverlap(ball1, ball2, minDistance, currentDistance, dx, dy) {
+  static resolveOverlap(ball1, ball2, minDistance, currentDistance, dx, dy, ball1Grabbed = false, ball2Grabbed = false) {
     const overlap = minDistance - currentDistance;
 
     // إذا كان هناك اختراق فعلي
@@ -119,9 +129,27 @@ export class PhysicsMath {
       const nx = dx / currentDistance;
       const ny = dy / currentDistance;
 
-      // 2. تقسيم مسافة التداخل بين الكرتين (كل كرة تتراجع نصف المسافة)
-      const moveX = (overlap / 2) * nx;
-      const moveY = (overlap / 2) * ny;
+      // 2. تقسيم مسافة التداخل بين الكرتين
+      let moveX1, moveY1, moveX2, moveY2;
+      if (ball1Grabbed) {
+        // ball1 is grabbed, so ball2 moves 100% of the overlap
+        moveX1 = 0;
+        moveY1 = 0;
+        moveX2 = overlap * nx;
+        moveY2 = overlap * ny;
+      } else if (ball2Grabbed) {
+        // ball2 is grabbed, so ball1 moves 100% of the overlap
+        moveX1 = -overlap * nx;
+        moveY1 = -overlap * ny;
+        moveX2 = 0;
+        moveY2 = 0;
+      } else {
+        // normal case: split 50/50
+        moveX1 = -(overlap / 2) * nx;
+        moveY1 = -(overlap / 2) * ny;
+        moveX2 = (overlap / 2) * nx;
+        moveY2 = (overlap / 2) * ny;
+      }
 
       // 3. حساب المتجه المماسي (Tangent) لكل كرة بناءً على زاويتها
       const t1x = Math.cos(ball1.theta);
@@ -131,10 +159,12 @@ export class PhysicsMath {
       const t2y = Math.sin(ball2.theta);
 
       // 4. إسقاط الإزاحة على المماس وتحويلها لتعديل في الزاوية
-      // الكرة الأولى نُبعدها عكس اتجاه المتجه
-      ball1.theta -= (moveX * t1x + moveY * t1y) / ball1.length;
-      // الكرة الثانية نُبعدها مع اتجاه المتجه
-      ball2.theta += (moveX * t2x + moveY * t2y) / ball2.length;
+      if (!ball1Grabbed) {
+        ball1.theta += (moveX1 * t1x + moveY1 * t1y) / ball1.length;
+      }
+      if (!ball2Grabbed) {
+        ball2.theta += (moveX2 * t2x + moveY2 * t2y) / ball2.length;
+      }
     }
   }
 }

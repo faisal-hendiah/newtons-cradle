@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, useFrame} from "@react-three/fiber";
 import {
   OrbitControls,
   PerspectiveCamera,
@@ -7,6 +7,7 @@ import {
   ContactShadows
 } from "@react-three/drei";
 import { useSelector } from "react-redux";
+import * as THREE from "three";
 import { NewtonEngine } from "../physics/Engine";
 import Pendulum from "./Pendulum";
 import CradleFrame from "./CradleFrame";
@@ -51,17 +52,17 @@ const audioManager = new AudioManager();
 
 const Simulation = ({ onGrabChange }) => {
   const config = useSelector(state => state.simulation);
-  const engineRef = useRef(null);
-  const [ballThetas, setBallThetas] = useState([]);
+  const engineRef =  useRef(null) ||null ;
+  const [ballPositions, setBallPositions] = useState([]);
 
   const grabbedBallRef = useRef(null);
-  const thetaOffsetRef = useRef(0);
-
-  const { mouse, viewport, camera } = useThree();
+  const clickOffsetRef = useRef(new THREE.Vector3());
+  const targetPosRef = useRef(null); // المؤشر الهدف لزنبرك سحب الماوس
 
   useEffect(() => {
     const handlePointerUp = () => {
       grabbedBallRef.current = null;
+      targetPosRef.current = null;
       onGrabChange(false);
       document.body.style.cursor = "auto";
 
@@ -90,81 +91,84 @@ const Simulation = ({ onGrabChange }) => {
     } else {
       engineRef.current.reinitialize(config);
     }
-    setBallThetas(engineRef.current.balls.map(b => b.theta));
+    setBallPositions(engineRef.current.balls.map(b => [...b.pos]));
   }, [config.ballCount, config.lengths, config.resetVersion]);
 
   useEffect(() => {
     if (engineRef.current && config.stopVersion > 0) {
       engineRef.current.balls.forEach(b => {
-        b.theta = 0;
-        b.omega = 0;
-        b.alpha = 0;
+        b.pos = [b.pivotX, -b.length, 0];
+        b.vel = [0, 0, 0];
       });
-      setBallThetas(engineRef.current.balls.map(b => b.theta));
+      setBallPositions(engineRef.current.balls.map(b => [...b.pos]));
       grabbedBallRef.current = null;
+      targetPosRef.current = null;
       onGrabChange(false);
     }
   }, [config.stopVersion, onGrabChange]);
 
-  const handlePointerDown = index => {
+  const handlePointerDown = (index, event) => {
     grabbedBallRef.current = index;
     onGrabChange(true);
 
     const ball = engineRef.current.balls[index];
-    const zDepth = camera.position.z;
-    const mouseX = (mouse.x * viewport.width * (zDepth / 12)) / 2;
-    const dx = mouseX - ball.pivotX;
-
-    // حفظ فارق الزاوية لمنع قفزة الكرة عند اللمس
-    const mouseTheta = Math.asin(
-      Math.max(-0.99, Math.min(0.99, dx / ball.length))
+    const clickPoint = event.point; // نقطة التقاطع ثلاثية الأبعاد
+    
+    // حساب فارق المسافة بين موقع الكرة الفعلي ونقطة اللمس لتفادي القفز المفاجئ
+    clickOffsetRef.current.set(
+      ball.pos[0] - clickPoint.x,
+      ball.pos[1] - clickPoint.y,
+      ball.pos[2] - clickPoint.z
     );
-    thetaOffsetRef.current = ball.theta - mouseTheta;
   };
 
-  // 🛠️ تم إعادة دالة useFrame ودمج التحديث الزمني الثابت بداخلها
   useFrame((state, delta) => {
     if (!engineRef.current) return;
 
-    // 1. معالجة سحب الكرة بالماوس
+    // 1. معالجة سحب الكرة بالماوس في الفضاء ثلاثي الأبعاد
     if (grabbedBallRef.current !== null) {
       document.body.style.cursor = "grabbing";
       const index = grabbedBallRef.current;
       const ball = engineRef.current.balls[index];
 
-      const zDepth = camera.position.z;
-      const mouseX = (mouse.x * viewport.width * (zDepth / 12)) / 2;
-      const dx = mouseX - ball.pivotX;
+      // إسقاط شعاع الماوس على مستوى أفقي يمر بمستوى تعليق الكرة
+      const raycaster = state.raycaster;
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), ball.length);
+      const target = new THREE.Vector3();
+      raycaster.ray.intersectPlane(plane, target);
 
-      const rawMouseTheta = Math.asin(
-        Math.max(-0.99, Math.min(0.99, dx / ball.length))
-      );
-      let targetTheta = rawMouseTheta + thetaOffsetRef.current;
+      // تطبيق الفارق المجموع
+      const targetX = target.x + clickOffsetRef.current.x;
+      const targetY = target.y + clickOffsetRef.current.y;
+      const targetZ = target.z + clickOffsetRef.current.z;
 
-      const maxAngle = Math.PI / 3; // تقييد الحركة بـ 60 درجة كحد أقصى
-      targetTheta = Math.max(-maxAngle, Math.min(maxAngle, targetTheta));
-
-      engineRef.current.setBallTheta(index, targetTheta);
+      // تعيين الإحداثيات الهدف للزنبرك بدلاً من تغيير الموقع بشكل فوري صلب
+      targetPosRef.current = [targetX, targetY, targetZ];
     }
 
-    // 2. المحرك الفيزيائي مع خطوة زمنية ثابتة (Fixed Time Step)
-    const fixedSubDt = 0.004; // دقة فيزيائية ثابتة (4 ميلي ثانية)
+    // 2. المحرك الفيزيائي مع خطوة زمنية ثابتة
+    const fixedSubDt = 0.004;
     const renderDelta = delta * config.timeScale;
 
-    // حماية ضد تأخر المتصفح (Lag Spike Protection)
     const contextTime = Math.min(renderDelta, 0.1);
     const numberOfSteps = Math.floor(contextTime / fixedSubDt);
 
     let totalCollisions = [];
 
-    // تحديث الفيزياء بخطوات متتالية وصارمة
     for (let i = 0; i < numberOfSteps; i++) {
-      const stepCollisions = engineRef.current.update(fixedSubDt, config, grabbedBallRef.current);
+      // نمرر المؤشر الهدف للزنبرك كمعامل رابع لتطبيق التحديث
+      const stepCollisions = engineRef.current.update(
+        fixedSubDt, 
+        config, 
+        grabbedBallRef.current, 
+        targetPosRef.current
+      );
       totalCollisions = [...totalCollisions, ...stepCollisions];
     }
 
     // 3. تشغيل الصوت
-    if (totalCollisions.length > 0 && grabbedBallRef.current === null) {
+    // نفصل الصوت المترتب على التصادمات الممسوخة يدويًا
+    if (totalCollisions.length > 0) {
       const maxIntensity = Math.max(...totalCollisions);
       const volume = Math.min(maxIntensity / 3, 1.0);
 
@@ -174,7 +178,7 @@ const Simulation = ({ onGrabChange }) => {
     }
 
     // 4. تحديث المصفوفة لإعادة رسم واجهة React
-    setBallThetas(engineRef.current.balls.map(b => b.theta));
+    setBallPositions(engineRef.current.balls.map(b => [...b.pos]));
   });
 
   useEffect(() => {
@@ -196,19 +200,18 @@ const Simulation = ({ onGrabChange }) => {
         length={Math.max(...config.lengths)}
       />
       {config.lengths.slice(0, config.ballCount).map((length, i) => {
-        // حساب موقع التعليق لكل كرة بنفس طريقة المحرك
         const pivotX =
           (i - (config.ballCount - 1) / 2) * (config.ballRadius * 2);
 
         return (
           <Pendulum
             key={i}
-            theta={ballThetas[i] || 0}
+            pos={ballPositions[i] || [pivotX, -length, 0]}
             length={length}
             radius={config.ballRadius}
             pivotX={pivotX}
             pivotY={Math.max(...config.lengths)}
-            onPointerDown={() => handlePointerDown(i)}
+            onPointerDown={(e) => handlePointerDown(i, e)}
           />
         );
       })}

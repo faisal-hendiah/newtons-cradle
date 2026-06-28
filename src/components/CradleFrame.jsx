@@ -1,4 +1,3 @@
-import React from "react";
 
 const CradleFrame = ({ ballCount, ballRadius, length }) => {
   const width = (ballCount + 1) * ballRadius * 2;

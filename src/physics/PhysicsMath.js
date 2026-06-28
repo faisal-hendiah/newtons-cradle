@@ -1,169 +1,218 @@
 /**
  * ============================================================================
- * PhysicsMath Class (Static Utility)
+ * كلاس رياضيات وحسابات الفيزياء ثلاثية الأبعاد (PhysicsMath)
  * ============================================================================
- * يوفر هذا الكلاس الدوال الرياضية المجردة لحل تفاعلات الأجسام.
- * مسؤوليته:
- * 1. تطبيق مصفوفة تبادل السرعات (1D Elastic Collision).
- * 2. معالجة التداخل البصري بين الكرات (Penetration Resolution).
+ * يوفر هذا الملف الدوال الرياضية ومصفوفات المتجهات المتقدمة لحل تفاعلات 
+ * الأجسام وتصادماتها في الفضاء ثلاثي الأبعاد.
+ * 
+ * ----------------------------------------------------------------------------
+ * 1. القوانين الفيزيائية المطبقة (Physical Laws Implemented):
+ * ----------------------------------------------------------------------------
+ *  أ. قانون انحفاظ كمية الحركة (Conservation of Linear Momentum):
+ *     m1 * v1 + m2 * v2 = m1 * v1' + m2 * v2'
+ *     حيث يبقى مجموع كمية الحركة الإجمالي للنظام ثابتاً قبل وبعد التصادم.
+ * 
+ *  ب. معامل الارتداد والتصادم المرن (Restitution & Elastic Collision):
+ *     v2' - v1' = -e * (v2 - v1)
+ *     حيث:
+ *     - e: معامل الارتداد (Restitution) ويتراوح بين 0 (تصادم عديم المرونة) و 1 (تصادم مرن تماماً).
+ *     ويتم تطبيق هذه الانحفاظات حصرياً على المحور العمودي المشترك للتلامس (Normal Axis).
+ * 
+ *  ج. حساب قوة النبض المتجهة (Vector Impulse Resolution Method):
+ *     بدلاً من تبديل السرعات الزاوية عشوائياً، نقوم بحساب النبض (Impulse Scalar - J) 
+ *     الذي يمثل القوة اللحظية المتولدة عند التصادم:
+ *     J = -(1 + e) * (v_rel . n) / (1/m1 + 1/m2)
+ *     حيث:
+ *     - v_rel: السرعة النسبية المتجهة بين الكرتين (v2 - v1).
+ *     - n: متجه الوحدة العمودي الفاصل بين الكرتين (Normal Unit Vector).
+ *     - m1, m2: كتل الكرات المتصادمة.
+ * 
+ *  د. تحديث السرعات وإسقاط قيد النواس (Velocity Update & Constraint Projection):
+ *     يتم إضافة النبض الموزع على الكتلة لسرعة كل كرة:
+ *     v1' = v1 - (J / m1) * n
+ *     v2' = v2 + (J / m2) * n
+ *     ثم يتم إلغاء أي سرعة خطية تسحب الكرات خارج مسارها الدائري عبر ضربها بمتجه الخيط لمنع تمدد الخيط.
+ * 
+ *  هـ. حل التداخل البصري ثلاثي الأبعاد (3D Spatial Penetration Resolution):
+ *     عند تداخل كرتين بسبب خطوة التكامل الزمنية، يتم حساب مسافة الاختراق:
+ *     overlap = minDistance - currentDistance
+ *     ويتم دفع الكرات بعيداً عن بعضها البعض على طول خط التلامس n. يتم تقسيم هذه الإزاحة بناءً 
+ *     على حالة الإمساك (الكرة الممسوخة باليد لا تتزحزح وتتحمل الكرة الحرة 100% من الإزاحة).
  * ============================================================================
  */
 export class PhysicsMath {
   /**
-   * دالة حل التصادم المرن التام في بعد واحد
-   * تعتمد على قانوني: انحفاظ كمية الحركة (Momentum) وانحفاظ الطاقة الحركية (Kinetic Energy)
+   * حل التصادم المرن التام ثلاثي الأبعاد باستخدام ناقلات الحركة والنبضات المتجهة
+   * @param {PendulumBall} ball1 - الكرة الأولى (اليسار افتراضياً)
+   * @param {PendulumBall} ball2 - الكرة الثانية (اليمين افتراضياً)
+   * @param {number} restitution - معامل المرونة والارتداد (e)
+   * @param {boolean} ball1Grabbed - ما إذا كانت الكرة الأولى ممسوكة باليد
+   * @param {boolean} ball2Grabbed - ما إذا كانت الكرة الثانية ممسوكة باليد
+   * @returns {boolean} true إذا حدث تصادم حقيقي وتمت معالجته، وإلا false
    */
   static resolveElasticCollision(ball1, ball2, restitution, ball1Grabbed = false, ball2Grabbed = false) {
-    // 1. حساب الموقع (x, y) لكل كرة لحظة التصادم
-    const x1 = ball1.pivotX + ball1.length * Math.sin(ball1.theta);
-    const y1 = -ball1.length * Math.cos(ball1.theta);
+    // 1. استخراج مواقع الكرات ثلاثية الأبعاد
+    const x1 = ball1.pos[0];
+    const y1 = ball1.pos[1];
+    const z1 = ball1.pos[2];
 
-    const x2 = ball2.pivotX + ball2.length * Math.sin(ball2.theta);
-    const y2 = -ball2.length * Math.cos(ball2.theta);
+    const x2 = ball2.pos[0];
+    const y2 = ball2.pos[1];
+    const z2 = ball2.pos[2];
 
-    // 2. حساب السرعة الخطية المماسية ثم تحليلها إلى متجهات (vx, vy)
-    // مشتقة الموقع بالنسبة للزمن تعطينا متجهات السرعة
-    const v1 = ball1.omega * ball1.length;
-    const v1x = v1 * Math.cos(ball1.theta);
-    const v1y = v1 * Math.sin(ball1.theta);
+    // 2. استخراج ناقلات السرعة الخطية
+    const v1x = ball1.vel[0];
+    const v1y = ball1.vel[1];
+    const v1z = ball1.vel[2];
 
-    const v2 = ball2.omega * ball2.length;
-    const v2x = v2 * Math.cos(ball2.theta);
-    const v2y = v2 * Math.sin(ball2.theta);
+    const v2x = ball2.vel[0];
+    const v2y = ball2.vel[1];
+    const v2z = ball2.vel[2];
 
-    // 3. حساب المسافة والمتجه الفاصل بين المركزين
+    // 3. حساب المسافة ومتجه الفصل ثلاثي الأبعاد (3D Vector Separation)
     const dx = x2 - x1;
     const dy = y2 - y1;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+    const dz = z2 - z1;
+    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-    // حماية من القسمة على صفر في حال تقاطع الكرتين تماماً
+    // حماية ضد القسمة على صفر في حالة التقاطع الكامل
     if (distance === 0) return false;
 
-    // 4. الحماية من الالتصاق الوهمي
-    // نحسب السرعة النسبية بين الكرتين
+    // 4. حساب السرعة النسبية ونقطة التلامس
     const dvx = v2x - v1x;
     const dvy = v2y - v1y;
+    const dvz = v2z - v1z;
 
-    // استخدام الضرب النقطي (Dot Product)
-    // إذا كانت النتيجة موجبة، فهذا يعني أن الكرتين تبتعدان عن بعضهما فعلياً ولا داعي لتطبيق الصدم
-    if (dx * dvx + dy * dvy >= 0) {
-      return false;
+    // الضرب النقطي للسرعة النسبية مع متجه الإزاحة لمعرفة التقارب
+    const relVelocityDotDist = dx * dvx + dy * dvy + dz * dvz;
+    if (relVelocityDotDist >= 0) {
+      return false; // الكرتان تبتعدان عن بعضهما بالفعل، لا داعي للتصادم
     }
 
-    // --- المرحلة الثانية: إسقاط السرعات وتطبيق قانون التصادم ---
-
-    // 1. حساب متجه الوحدة لخط التصادم (Normal Unit Vector)
-    // هذا المتجه يمثل "خط التصادم" المباشر بين الكرتين
+    // متجه الوحدة الطبيعي للتصادم (Normal Unit Vector)
     const nx = dx / distance;
     const ny = dy / distance;
+    const nz = dz / distance;
 
-    // 2. حساب المتجه المماسي (Tangent Unit Vector)
-    // عمودي تماماً على خط التصادم
-    const tx = -ny;
-    const ty = nx;
+    // السرعة النسبية المسقطة على خط التصادم
+    const vRelN = dvx * nx + dvy * ny + dvz * nz;
 
-    // 3. إسقاط المتجهات: حساب السرعة على الخط العمودي (التي ستتغير) والمماسي (التي ستبقى ثابتة)
-    // نستخدم الضرب النقطي (Dot Product)
-    const v1n = nx * v1x + ny * v1y;
-    const v1t = tx * v1x + ty * v1y;
+    // 5. تطبيق قانون النبض المتجه (Vector Impulse Resolution)
+    // إذا كانت إحدى الكرات ممسوخة، نمنحها افتراضياً كتلة هائلة (1e12) لمنع ارتدادها
+    const m1 = ball1Grabbed ? 1e12 : ball1.mass;
+    const m2 = ball2Grabbed ? 1e12 : ball2.mass;
 
-    const v2n = nx * v2x + ny * v2y;
-    const v2t = tx * v2x + ty * v2y;
+    // القيمة القياسية للنبض: J = -(1 + e) * v_rel_normal / (1/m1 + 1/m2)
+    const impulse = -(1 + restitution) * vRelN / (1 / m1 + 1 / m2);
 
-    // 4. تطبيق قانون حفظ الزخم على السرعات العمودية فقط (1D Collision)
-    let v1n_new, v2n_new;
-    if (ball1Grabbed) {
-      v1n_new = v1n; // grabbed ball does not change velocity
-      v2n_new = (1 + restitution) * v1n - restitution * v2n;
-    } else if (ball2Grabbed) {
-      v1n_new = (1 + restitution) * v2n - restitution * v1n;
-      v2n_new = v2n; // grabbed ball does not change velocity
-    } else {
-      const m1 = ball1.mass;
-      const m2 = ball2.mass;
-      const totalMomentum = m1 * v1n + m2 * v2n;
-      v1n_new = (totalMomentum - m2 * restitution * (v1n - v2n)) / (m1 + m2);
-      v2n_new = (totalMomentum + m1 * restitution * (v1n - v2n)) / (m1 + m2);
-    }
-
-    // --- المرحلة الثالثة: إعادة تركيب السرعات وتحويلها لسرعة زاوية ---
-
-    // 1. إعادة تركيب المتجهات: نجمع السرعة العمودية الجديدة مع السرعة المماسية (التي لم تتغير)
-    const v1x_final = v1n_new * nx + v1t * tx;
-    const v1y_final = v1n_new * ny + v1t * ty;
-
-    const v2x_final = v2n_new * nx + v2t * tx;
-    const v2y_final = v2n_new * ny + v2t * ty;
-
-    // 2. فرض قيد الخيط (Pendulum Constraint):
-    // الكرة لا يمكنها التحرك إلا بشكل مماس لمسارها الدائري، لذلك نسقط السرعة النهائية على هذا المماس
-    const v1_final =
-      v1x_final * Math.cos(ball1.theta) + v1y_final * Math.sin(ball1.theta);
-    const v2_final =
-      v2x_final * Math.cos(ball2.theta) + v2y_final * Math.sin(ball2.theta);
-
-    // 3. تحويل السرعة الخطية النهائية إلى سرعة زاوية لتحديث حالة الكرات
+    // 6. تحديث السرعات وإعادة تطبيق قيود خيوط النواس
     if (!ball1Grabbed) {
-      ball1.omega = v1_final / ball1.length;
+      ball1.vel[0] -= (impulse / ball1.mass) * nx;
+      ball1.vel[1] -= (impulse / ball1.mass) * ny;
+      ball1.vel[2] -= (impulse / ball1.mass) * nz;
+
+      // إسقاط لمنع خروج الكرة خارج القيد الدائري للخيط (Radial Constraint Projection)
+      const u1x = (ball1.pos[0] - ball1.pivotX) / ball1.length;
+      const u1y = ball1.pos[1] / ball1.length;
+      const u1z = ball1.pos[2] / ball1.length;
+      const vDotU1 = ball1.vel[0] * u1x + ball1.vel[1] * u1y + ball1.vel[2] * u1z;
+      ball1.vel[0] -= vDotU1 * u1x;
+      ball1.vel[1] -= vDotU1 * u1y;
+      ball1.vel[2] -= vDotU1 * u1z;
     } else {
-      ball1.omega = 0;
-    }
-    if (!ball2Grabbed) {
-      ball2.omega = v2_final / ball2.length;
-    } else {
-      ball2.omega = 0;
+      ball1.vel = [0, 0, 0];
     }
 
-    return true; // تمت عملية التصادم بنجاح!
+    if (!ball2Grabbed) {
+      ball2.vel[0] += (impulse / ball2.mass) * nx;
+      ball2.vel[1] += (impulse / ball2.mass) * ny;
+      ball2.vel[2] += (impulse / ball2.mass) * nz;
+
+      // إسقاط لمنع خروج الكرة خارج القيد الدائري للخيط
+      const u2x = (ball2.pos[0] - ball2.pivotX) / ball2.length;
+      const u2y = ball2.pos[1] / ball2.length;
+      const u2z = ball2.pos[2] / ball2.length;
+      const vDotU2 = ball2.vel[0] * u2x + ball2.vel[1] * u2y + ball2.vel[2] * u2z;
+      ball2.vel[0] -= vDotU2 * u2x;
+      ball2.vel[1] -= vDotU2 * u2y;
+      ball2.vel[2] -= vDotU2 * u2z;
+    } else {
+      ball2.vel = [0, 0, 0];
+    }
+
+    return true; 
   }
 
   /**
-   * دالة فك التداخل الميكانيكي (2D Static Collision Resolution)
+   * فك التداخل الميكانيكي ومنع اختراق كرات النواس لبعضها البعض
+   * @param {PendulumBall} ball1 - الكرة الأولى
+   * @param {PendulumBall} ball2 - الكرة الثانية
+   * @param {number} minDistance - المسافة الصغرى المسموحة (مجموع نصفي القطرين R1 + R2)
+   * @param {number} currentDistance - المسافة الفعلية بين المركزين
+   * @param {number} dx - الفارق على المحور X
+   * @param {number} dy - الفارق على المحور Y
+   * @param {number} dz - الفارق على المحور Z
+   * @param {boolean} ball1Grabbed - ما إذا كانت الكرة الأولى ممسوكة
+   * @param {boolean} ball2Grabbed - ما إذا كانت الكرة الثانية ممسوكة
    */
-  static resolveOverlap(ball1, ball2, minDistance, currentDistance, dx, dy, ball1Grabbed = false, ball2Grabbed = false) {
+  static resolveOverlap(ball1, ball2, minDistance, currentDistance, dx, dy, dz, ball1Grabbed = false, ball2Grabbed = false) {
     const overlap = minDistance - currentDistance;
 
-    // إذا كان هناك اختراق فعلي
     if (overlap > 0 && currentDistance > 0) {
-      // 1. حساب متجه الوحدة لخط التلامس (Normal Vector)
       const nx = dx / currentDistance;
       const ny = dy / currentDistance;
+      const nz = dz / currentDistance;
 
-      // 2. تقسيم مسافة التداخل بين الكرتين
-      let moveX1, moveY1, moveX2, moveY2;
+      // حساب نسب الدفع
+      // إذا كانت الكرة ممسوخة باليد، نمنع حركتها وننقل 100% من مسافة التراجع للكرة الأخرى
+      let moveX1, moveY1, moveZ1, moveX2, moveY2, moveZ2;
       if (ball1Grabbed) {
-        // ball1 is grabbed, so ball2 moves 100% of the overlap
-        moveX1 = 0;
-        moveY1 = 0;
-        moveX2 = overlap * nx;
-        moveY2 = overlap * ny;
+        moveX1 = 0; moveY1 = 0; moveZ1 = 0;
+        moveX2 = overlap * nx; moveY2 = overlap * ny; moveZ2 = overlap * nz;
       } else if (ball2Grabbed) {
-        // ball2 is grabbed, so ball1 moves 100% of the overlap
-        moveX1 = -overlap * nx;
-        moveY1 = -overlap * ny;
-        moveX2 = 0;
-        moveY2 = 0;
+        moveX1 = -overlap * nx; moveY1 = -overlap * ny; moveZ1 = -overlap * nz;
+        moveX2 = 0; moveY2 = 0; moveZ2 = 0;
       } else {
-        // normal case: split 50/50
+        // في الحالة الطبيعية يتوزع التراجع بالتساوي 50% لكل كرة
         moveX1 = -(overlap / 2) * nx;
         moveY1 = -(overlap / 2) * ny;
+        moveZ1 = -(overlap / 2) * nz;
         moveX2 = (overlap / 2) * nx;
         moveY2 = (overlap / 2) * ny;
+        moveZ2 = (overlap / 2) * nz;
       }
 
-      // 3. حساب المتجه المماسي (Tangent) لكل كرة بناءً على زاويتها
-      const t1x = Math.cos(ball1.theta);
-      const t1y = Math.sin(ball1.theta);
-      
-      const t2x = Math.cos(ball2.theta);
-      const t2y = Math.sin(ball2.theta);
-
-      // 4. إسقاط الإزاحة على المماس وتحويلها لتعديل في الزاوية
+      // تطبيق التراجع وإعادة إسقاط المواقع على كرة القيود لمنع تمدد الخيوط
       if (!ball1Grabbed) {
-        ball1.theta += (moveX1 * t1x + moveY1 * t1y) / ball1.length;
+        ball1.pos[0] += moveX1;
+        ball1.pos[1] += moveY1;
+        ball1.pos[2] += moveZ1;
+
+        const ux = ball1.pos[0] - ball1.pivotX;
+        const uy = ball1.pos[1];
+        const uz = ball1.pos[2];
+        const len = Math.sqrt(ux * ux + uy * uy + uz * uz);
+        if (len > 0) {
+          ball1.pos[0] = ball1.pivotX + (ux / len) * ball1.length;
+          ball1.pos[1] = (uy / len) * ball1.length;
+          ball1.pos[2] = (uz / len) * ball1.length;
+        }
       }
+
       if (!ball2Grabbed) {
-        ball2.theta += (moveX2 * t2x + moveY2 * t2y) / ball2.length;
+        ball2.pos[0] += moveX2;
+        ball2.pos[1] += moveY2;
+        ball2.pos[2] += moveZ2;
+
+        const ux = ball2.pos[0] - ball2.pivotX;
+        const uy = ball2.pos[1];
+        const uz = ball2.pos[2];
+        const len = Math.sqrt(ux * ux + uy * uy + uz * uz);
+        if (len > 0) {
+          ball2.pos[0] = ball2.pivotX + (ux / len) * ball2.length;
+          ball2.pos[1] = (uy / len) * ball2.length;
+          ball2.pos[2] = (uz / len) * ball2.length;
+        }
       }
     }
   }

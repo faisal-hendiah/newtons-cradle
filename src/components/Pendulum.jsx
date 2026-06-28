@@ -1,43 +1,56 @@
-import React, { useRef } from "react";
-import { useFrame } from "@react-three/fiber";
+import React, { useMemo } from "react";
+import * as THREE from "three";
 
-const Pendulum = ({ theta, length, radius, pivotX, pivotY, onPointerDown }) => {
-  const groupRef = useRef();
+const Pendulum = ({ pos, length, radius, pivotX, pivotY, onPointerDown }) => {
+  const [absX, y, z] = pos;
+  const x = absX - pivotX; // التحويل من الإحداثيات العالمية إلى المحلية بالنسبة لـ pivotX
 
-  useFrame(() => {
-    if (groupRef.current) {
-      groupRef.current.rotation.z = theta;
-    }
-  });
-
-  // حسابات الخيوط المزدوجة (V-Shape)
   const frameDepth = 5;
   const zOffset = frameDepth / 2;
-  const stringLength = Math.sqrt(length * length + zOffset * zOffset);
-  const angleX = Math.atan2(zOffset, length); // زاوية الميلان
+
+  // حساب مواقع واتجاهات الخيوط المزدوجة في الفضاء ثلاثي الأبعاد
+  const stringData = useMemo(() => {
+    // 1. الخيط الأمامي (من التعليق الأمامي إلى الكرة)
+    const vFront = new THREE.Vector3(x, y, z - zOffset);
+    const lenFront = vFront.length();
+    const qFront = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      vFront.clone().normalize()
+    );
+    const pFront = [x / 2, y / 2, (zOffset + z) / 2];
+
+    // 2. الخيط الخلفي (من التعليق الخلفي إلى الكرة)
+    const vBack = new THREE.Vector3(x, y, z + zOffset);
+    const lenBack = vBack.length();
+    const qBack = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      vBack.clone().normalize()
+    );
+    const pBack = [x / 2, y / 2, (-zOffset + z) / 2];
+
+    return { lenFront, qFront, pFront, lenBack, qBack, pBack };
+  }, [x, y, z, zOffset]);
 
   return (
-    <group position={[pivotX, pivotY, 0]} ref={groupRef}>
+    <group position={[pivotX, pivotY, 0]}>
       {/* الخيط الأمامي */}
-      <mesh position={[0, -length / 2, zOffset / 2]} rotation={[angleX, 0, 0]}>
-        <cylinderGeometry args={[0.015, 0.015, stringLength, 8]} />
+      <mesh position={stringData.pFront} quaternion={stringData.qFront}>
+        <cylinderGeometry args={[0.015, 0.015, stringData.lenFront, 8]} />
         <meshStandardMaterial color="#888" metalness={0.8} roughness={0.2} />
       </mesh>
 
       {/* الخيط الخلفي */}
-      <mesh
-        position={[0, -length / 2, -zOffset / 2]}
-        rotation={[-angleX, 0, 0]}>
-        <cylinderGeometry args={[0.015, 0.015, stringLength, 8]} />
+      <mesh position={stringData.pBack} quaternion={stringData.qBack}>
+        <cylinderGeometry args={[0.015, 0.015, stringData.lenBack, 8]} />
         <meshStandardMaterial color="#888" metalness={0.8} roughness={0.2} />
       </mesh>
 
       {/* الكرة */}
       <mesh
-        position={[0, -length, 0]}
+        position={[x, y, z]}
         onPointerDown={e => {
           e.stopPropagation();
-          onPointerDown();
+          onPointerDown(e);
         }}
         onPointerOver={() => (document.body.style.cursor = "grab")}
         onPointerOut={() => (document.body.style.cursor = "auto")}>

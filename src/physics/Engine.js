@@ -3,116 +3,123 @@ import { PhysicsMath } from "./PhysicsMath.js";
 
 /**
  * ============================================================================
- * NewtonEngine Class
+ * كلاس محرك الفيزياء المركزي (NewtonEngine)
  * ============================================================================
- * المحرك الفيزيائي المركزي (The Core Orchestrator).
- * مسؤوليته:
- * 1. تهيئة النظام وإنشاء قائمة الكرات.
- * 2. دفع عجلة الزمن للأمام (Tick) عبر استدعاء دوال التكامل لكل كرة.
- * 3. اكتشاف التصادمات (Collision Detection) في كل إطار زمني.
- * 4. إدارة دورة الإصلاح التكراري (Iterative Resolution) لانتقال النبضات.
+ * يمثل هذا الملف العقل المنظم والمشرف على تشغيل المحاكاة الفيزيائية لنواس نيوتن.
+ * مسؤوليته الرئيسية هي دمج عجلة الزمن (Integrate time)، اكتشاف التصادمات بين الكرات، 
+ * وفك التداولات بالإضافة إلى فرض قيود الترتيب ثنائية وثلاثية الأبعاد.
+ * 
+ * ----------------------------------------------------------------------------
+ * 1. تفاصيل دورة تحديث الفيزياء (Physics Tick Cycle):
+ * ----------------------------------------------------------------------------
+ *  أ. خطوة التكامل المستقل (Independent Integration Step):
+ *     في كل إطار زمني، يتم استدعاء دالة التكامل لكل كرة بشكل مستقل لحساب موقعها الجديد 
+ *     بناءً على السرعة والجاذبية الأرضية وتخامد مقاومة الهواء. في حال كانت هناك كرة 
+ *     ممسوخة، نمرر لها موقع مؤشر الماوس لتطبيق قوة الجذب المرنة.
+ * 
+ *  ب. دورة الإصلاح التكراري للتصادمات (Iterative Collision Resolution):
+ *     لضمان انتقال "موجة الزخم الحركي" عبر الكرات الوسيطة فورياً في نفس الإطار الزمني 
+ *     (وهو الجوهر الفيزيائي لنواس نيوتن)، نقوم بتكرار عملية فحص وحل التصادمات 10 مرات (10 iterations) 
+ *     في كل تحديث. هذا يمنع الكرات من التداخل ويجعل انتقال الطاقة يبدو واقعياً لحظياً.
+ * 
+ *  ج. فك التداخل الهندسي (Overlapping Resolution):
+ *     تتراكم الكرات في بعض الأحيان بسبب أخطاء التقريب العددي للخطوة الزمنية، لذا يتم استدعاء 
+ *     معالج التداخل الهندسي لدفع الكرات بعيداً عن بعضها بمسافة لا تقل عن مجموع أنصاف أقطارها.
+ * 
+ *  د. قيد الترتيب الديناميكي (Order Preservation Constraint):
+ *     إذا تم سحب إحدى الكرات، نقوم بفرض قيد يمنع عبورها خلف الكرات المجاورة إذا كانتا على نفس الارتفاع.
+ *     يتم فحص المسافة القطرية الجانبية: dist2D = sqrt(dy^2 + dz^2).
+ *     وإذا كانت أصغر من مجموع أنصاف الأقطار، يتم إزاحة الكرات المجاورة أفقياً وتعديل زاويتها لضمان عدم الاختراق.
  * ============================================================================
  */
 export class NewtonEngine {
+  /**
+   * إنشاء وتهيئة كرات المحاكاة
+   * @param {Object} config - إعدادات المحاكاة (ballCount, lengths, mass, masses, ballRadius)
+   */
   constructor(config) {
     this.reinitialize(config);
   }
 
   /**
-   * دالة إعادة ضبط المصنع (تهيئة الكرات بناءً على الإعدادات)
+   * إعادة ضبط وتهيئة النظام بالكامل بالكرات والكتل والأطوال الجديدة
+   * @param {Object} config - الإعدادات المدخلة من واجهة المستخدم
    */
   reinitialize(config) {
     const { ballCount, lengths, length, mass, masses, ballRadius } = config;
 
-    this.balls = []; // 1. نجهز مصفوفة فارغة
+    this.balls = [];
 
-    // 2. نفتح حلقة تبدأ من الصفر وتنتهي عند عدد الكرات
+    // إنشاء قائمة الكرات وتحديد خصائصها الفردية
     for (let i = 0; i < ballCount; i++) {
-      // 3. في كل لفة، ننشئ كرة جديدة (ندعم الكتل الفردية والأطوال الفردية)
-      const ballMass =
-        masses && masses[i] !== undefined ? masses[i] : mass || 1.0;
-      const ballLength =
-        lengths && lengths[i] !== undefined ? lengths[i] : length || 5.0;
-      let newBall = new PendulumBall(
-        i,
-        ballCount,
-        ballLength,
-        ballMass,
-        ballRadius,
-      );
-
-      // 4. نضع الكرة داخل المصفوفة
+      // دعم خيار الكتل والأطوال الفردية لكل كرة على حدة مع توفير بديل احتياطي (Fallback)
+      const ballMass = (masses && masses[i] !== undefined) ? masses[i] : (mass || 1.0);
+      const ballLength = (lengths && lengths[i] !== undefined) ? lengths[i] : (length || 5.0);
+      let newBall = new PendulumBall(i, ballCount, ballLength, ballMass, ballRadius);
       this.balls.push(newBall);
     }
   }
 
   /**
-   * الحلقة الرئيسية للمحرك (Main Physics Loop)
+   * خطوة التحديث الزمني المركزي لمحرك الفيزياء
+   * @param {number} dt - الخطوة الزمنية الصغيرة جداً بالثواني (مثلاً 0.004 ثانية لضمان الدقة العالية)
+   * @param {Object} params - معطيات الفيزياء (gravity, restitution, isDampingEnabled, damping)
+   * @param {number|null} grabbedIndex - مؤشر الكرة الممسوخة حالياً بواسطة مؤشر الماوس
+   * @param {Array<number>|null} targetPos - موقع مؤشر الماوس ثلاثي الأبعاد [x, y, z] لسحب الكرة
+   * @returns {Array<number>} مصفوفة تحتوي على شدة السرعات النسبية للتصادمات الحادثة (لتشغيل الصوت)
    */
-  update(dt, params, grabbedIndex = null) {
+  update(dt, params, grabbedIndex = null, targetPos = null) {
     const { gravity, restitution, isDampingEnabled, damping } = params;
-    const collisions = []; // مصفوفة لتخزين شدة الصدمات (لتشغيل الصوت)
+    const collisions = [];
 
-    // المرحلة 1: خطوة التكامل المستقلة (Integration Step)
-    // كل كرة تحسب موقعها الجديد بشكل مستقل بناءً على الجاذبية وسرعتها
+    // المرحلة 1: خطوة التكامل المستقلة وتحديث المواقع والسرعات بشكل حر
     for (let i = 0; i < this.balls.length; i++) {
-      if (i === grabbedIndex) {
-        this.balls[i].omega = 0;
-        this.balls[i].alpha = 0;
-        continue; // لا نقوم بدمج الكرة المسحوبة بالجاذبية حتى لا تتذبذب تحت الماوس
+      if (i === grabbedIndex && targetPos) {
+        // الكرة الممسوكة بالماوس تتحرك تحت تأثير قوى الجاذبية + قوة الزنبرك للمؤشر
+        this.balls[i].integrate(dt, gravity, damping, isDampingEnabled, targetPos);
+      } else {
+        this.balls[i].integrate(dt, gravity, damping, isDampingEnabled, null);
       }
-      this.balls[i].integrate(dt, gravity, damping, isDampingEnabled);
     }
 
-    // المرحلة 2: اكتشاف وحل التصادمات (Iterative Collision Resolution)
-    // التكرار (iterations = 10) ضروري جداً! لأنه يسمح بمرور "موجة كمية الحركة"
-    // عبر الكرات الوسطى في نفس الإطار الزمني لتنطلق الكرة الأخيرة فوراً.
+    // المرحلة 2: حل التصادمات والتداخلات الميكانيكية تكرارياً (10 دورات لتمرير زخم الحركة اللحظي)
     const iterations = 10;
     for (let iter = 0; iter < iterations; iter++) {
-      // فحص كل كرة مع جميع الكرات التي تليها
       for (let i = 0; i < this.balls.length; i++) {
         for (let j = i + 1; j < this.balls.length; j++) {
           const b1 = this.balls[i];
           const b2 = this.balls[j];
 
-          // 1. حساب الموقع الأفقي (X)
-          const x1 = b1.pivotX + b1.length * Math.sin(b1.theta);
-          const x2 = b2.pivotX + b2.length * Math.sin(b2.theta);
-
-          // 2. حساب الموقع العمودي (Y) بافتراض أن سقف التعليق ثابت
-          const y1 = -b1.length * Math.cos(b1.theta);
-          const y2 = -b2.length * Math.cos(b2.theta);
-
-          // 3. حساب المسافة الفعلية بين المركزين (2D Euclidean Distance)
-          const dx = x2 - x1;
-          const dy = y2 - y1;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          // 3. المسافة الصغرى المسموحة (مجموع نصفي القطرين)
+          // حساب الإزاحة والمواقع النسبية ثلاثية الأبعاد
+          const dx = b2.pos[0] - b1.pos[0];
+          const dy = b2.pos[1] - b1.pos[1];
+          const dz = b2.pos[2] - b1.pos[2];
+          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
           const minDistance = b1.radius + b2.radius;
 
-          // اكتشاف التداخل (Broad-phase Detection)
           if (distance < minDistance) {
-            // حساب السرعة النسبية بين الكرتين لتقدير شدة الصدمة (للصوتيات)
-            const relativeVelocity = Math.abs(
-              b1.omega * b1.length - b2.omega * b2.length,
-            );
+            // حساب السرعة النسبية المتجهة بين الكرتين
+            const dvx = b2.vel[0] - b1.vel[0];
+            const dvy = b2.vel[1] - b1.vel[1];
+            const dvz = b2.vel[2] - b1.vel[2];
+            const relativeVelocity = Math.sqrt(dvx * dvx + dvy * dvy + dvz * dvz);
 
-            // استدعاء دالة الرياضيات لحل الصدم (تبادل السرعات مع معرفة المقبوضة)
+            // حل الصدم ثلاثي الأبعاد
+            // نمرر false للمعاملين الأخيرين حتى ترتد الكرة الممسوخة طبيعياً بكتلتها الواقعية
             const collided = PhysicsMath.resolveElasticCollision(
               b1,
               b2,
               restitution,
-              i === grabbedIndex,
-              j === grabbedIndex,
+              false,
+              false,
             );
 
-            // تسجيل الصدمة لتشغيل الصوت (فقط في التكرار الأول لعدم تكرار الصوت)
-            if (collided && iter === 0 && relativeVelocity > 0.7) {
+            // تسجيل شدة الصدم لتشغيل الصوت الملائم (فقط في التكرار الأول لتفادي تكرار الصوت)
+            if (collided && iter === 0 && relativeVelocity > 0.3) {
               collisions.push(relativeVelocity);
             }
 
-            // استدعاء دالة الرياضيات لفك التداخل البصري
-            // نقوم بفك التداخل دائماً عند وجود سحب لتفادي تداخل الكرات
+            // فك التداخل الميكانيكي ومنع الاختراق
             if (isDampingEnabled || grabbedIndex !== null) {
               PhysicsMath.resolveOverlap(
                 b1,
@@ -121,8 +128,9 @@ export class NewtonEngine {
                 distance,
                 dx,
                 dy,
-                i === grabbedIndex,
-                j === grabbedIndex,
+                dz,
+                false,
+                false,
               );
             }
           }
@@ -130,61 +138,111 @@ export class NewtonEngine {
       }
     }
 
-    // فرض قيود الترتيب الأفقي فقط عند السحب باليد لمنع التداخل أثناء الحركة السريعة
+    // تطبيق قيود الترتيب فقط عندما تكون هناك كرة ممسوخة باليد لمنع الاختراقات أثناء السحب السريع
     if (grabbedIndex !== null) {
       this.enforceOrderConstraints(grabbedIndex);
     }
 
-    // إعادة قائمة الصدمات ليتعامل معها واجهة الصوت (Audio Manager)
     return collisions;
   }
 
   /**
-   * دالة واجهة المستخدم (User Interaction)
-   * تسمح للمستخدم بسحب الكرة وتحديد زاويتها بشكل قسري مع تصفير سرعتها
+   * تعيين زاوية الكرة بالراديان (للتوافقية مع التهيئة والرموز القديمة)
+   * @param {number} index - مؤشر الكرة
+   * @param {number} theta - زاوية التأرجح المطلوبة بالراديان
    */
   setBallTheta(index, theta) {
     if (this.balls[index]) {
-      this.balls[index].theta = theta;
-      this.balls[index].omega = 0; // تفريغ السرعة أثناء الإمساك
-      this.balls[index].alpha = 0;
+      const ball = this.balls[index];
+      const x = ball.pivotX + ball.length * Math.sin(theta);
+      const y = -ball.length * Math.cos(theta);
+      ball.pos = [x, y, 0];
+      ball.vel = [0, 0, 0];
 
-      // تطبيق فك التداخل وقفل الحركة بشكل فوري
       this.enforceOrderConstraints(index);
     }
   }
 
   /**
-   * دالة فرض قيود الترتيب الأفقي ومنع تداخل الكرات
-   * تضمن بقاء الكرات مرتبة من اليسار إلى اليمين بمسافة لا تقل عن قطر الكرة
-   * تأخذ في الاعتبار الفارق الرأسي (dy) لتسمح للكرات الطويلة بالمرور تحت الكرات القصيرة دون تصادم
+   * تعيين إحداثيات موقع الكرة بشكل مباشر (مثل السحب أو الإعادة القسرية)
+   * ويتم معها إعادة إسقاط الكرة على سطح طول الخيط لمنع تمدده
+   * @param {number} index - مؤشر الكرة
+   * @param {number} x - الإحداثي X المطلوب
+   * @param {number} y - الإحداثي Y المطلوب
+   * @param {number} z - الإحداثي Z المطلوب
+   */
+  setBallPosition(index, x, y, z) {
+    if (this.balls[index]) {
+      const ball = this.balls[index];
+      ball.pos[0] = x;
+      ball.pos[1] = y;
+      ball.pos[2] = z;
+      ball.vel = [0, 0, 0];
+
+      // إسقاط الموقع على قيد طول الخيط فوراً لمنع التمدد
+      const px = ball.pivotX;
+      const dx = ball.pos[0] - px;
+      const dy = ball.pos[1];
+      const dz = ball.pos[2];
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (len > 0) {
+        ball.pos[0] = px + (dx / len) * ball.length;
+        ball.pos[1] = (dy / len) * ball.length;
+        ball.pos[2] = (dz / len) * ball.length;
+      }
+
+      this.enforceOrderConstraints(index);
+    }
+  }
+
+  /**
+   * فرض قيود الترتيب ثنائية وثلاثية الأبعاد لمنع تداخل الكرات أثناء السحب
+   * تضمن الدالة بقاء الكرات مرتبة من اليسار إلى اليمين بمسافة لا تقل عن القطر.
+   * وتأخذ في الاعتبار الفارق الجانبي (dy, dz) لتسمح للكرات الطويلة بالمرور تحت/بجانب القصيرة بحرية.
+   * @param {number} grabbedIndex - مؤشر الكرة الممسوخة باليد حالياً
    */
   enforceOrderConstraints(grabbedIndex) {
     if (grabbedIndex === null) return;
     const n = this.balls.length;
 
-    // دفع الكرات إلى اليمين
+    // 1. دفع الكرات الواقعة على يمين الكرة الممسوخة نحو اليمين
     for (let i = grabbedIndex; i < n - 1; i++) {
       const b1 = this.balls[i];
       const b2 = this.balls[i + 1];
 
       for (let iter = 0; iter < 10; iter++) {
-        const x1 = b1.pivotX + b1.length * Math.sin(b1.theta);
-        const y1 = -b1.length * Math.cos(b1.theta);
-        const x2 = b2.pivotX + b2.length * Math.sin(b2.theta);
-        const y2 = -b2.length * Math.cos(b2.theta);
+        const x1 = b1.pos[0];
+        const y1 = b1.pos[1];
+        const z1 = b1.pos[2];
+        const x2 = b2.pos[0];
+        const y2 = b2.pos[1];
+        const z2 = b2.pos[2];
+
         const minDistance = b1.radius + b2.radius;
         const dy = y2 - y1;
+        const dz = z2 - z1;
+        const dist2D = Math.sqrt(dy * dy + dz * dz); // الفارق القطري في المستوى YZ
 
-        // نطبق القيد فقط إذا كان الفارق الرأسي صغيراً (أي يمكنهما التصادم)
-        if (Math.abs(dy) < minDistance) {
-          const dxRequired = Math.sqrt(minDistance * minDistance - dy * dy);
+        // نقوم بفرض الإزاحة الأفقية فقط إذا كان الفارق الجانبي أصغر من مجموع نصفي القطرين
+        // (أي أن مسارات الكرات تتقاطع في الفضاء ثلاثي الأبعاد وقد يحدث تصادم)
+        if (dist2D < minDistance) {
+          const dxRequired = Math.sqrt(minDistance * minDistance - dist2D * dist2D);
           if (x2 - x1 < dxRequired) {
             const targetX2 = x1 + dxRequired;
-            const sinTheta2 = (targetX2 - b2.pivotX) / b2.length;
-            b2.theta = Math.asin(Math.max(-0.98, Math.min(0.98, sinTheta2)));
-            b2.omega = 0;
-            b2.alpha = 0;
+            b2.pos[0] = targetX2;
+
+            // إسقاط الموقع المحدث على كرة قيود طول الخيط الخاصة بـ b2
+            const px = b2.pivotX;
+            const dx = b2.pos[0] - px;
+            const dyVal = b2.pos[1];
+            const dzVal = b2.pos[2];
+            const len = Math.sqrt(dx * dx + dyVal * dyVal + dzVal * dzVal);
+            if (len > 0) {
+              b2.pos[0] = px + (dx / len) * b2.length;
+              b2.pos[1] = (dyVal / len) * b2.length;
+              b2.pos[2] = (dzVal / len) * b2.length;
+            }
+            b2.vel = [0, 0, 0];
           } else {
             break;
           }
@@ -194,28 +252,42 @@ export class NewtonEngine {
       }
     }
 
-    // دفع الكرات إلى اليسار
+    // 2. دفع الكرات الواقعة على يسار الكرة الممسوخة نحو اليسار
     for (let i = grabbedIndex; i > 0; i--) {
       const b2 = this.balls[i];
       const b1 = this.balls[i - 1];
 
       for (let iter = 0; iter < 10; iter++) {
-        const x1 = b1.pivotX + b1.length * Math.sin(b1.theta);
-        const y1 = -b1.length * Math.cos(b1.theta);
-        const x2 = b2.pivotX + b2.length * Math.sin(b2.theta);
-        const y2 = -b2.length * Math.cos(b2.theta);
+        const x1 = b1.pos[0];
+        const y1 = b1.pos[1];
+        const z1 = b1.pos[2];
+        const x2 = b2.pos[0];
+        const y2 = b2.pos[1];
+        const z2 = b2.pos[2];
+
         const minDistance = b1.radius + b2.radius;
         const dy = y2 - y1;
+        const dz = z2 - z1;
+        const dist2D = Math.sqrt(dy * dy + dz * dz);
 
-        // نطبق القيد فقط إذا كان الفارق الرأسي صغيراً (أي يمكنهما التصادم)
-        if (Math.abs(dy) < minDistance) {
-          const dxRequired = Math.sqrt(minDistance * minDistance - dy * dy);
+        if (dist2D < minDistance) {
+          const dxRequired = Math.sqrt(minDistance * minDistance - dist2D * dist2D);
           if (x2 - x1 < dxRequired) {
             const targetX1 = x2 - dxRequired;
-            const sinTheta1 = (targetX1 - b1.pivotX) / b1.length;
-            b1.theta = Math.asin(Math.max(-0.98, Math.min(0.98, sinTheta1)));
-            b1.omega = 0;
-            b1.alpha = 0;
+            b1.pos[0] = targetX1;
+
+            // إسقاط الموقع المحدث على كرة قيود طول الخيط الخاصة بـ b1
+            const px = b1.pivotX;
+            const dx = b1.pos[0] - px;
+            const dyVal = b1.pos[1];
+            const dzVal = b1.pos[2];
+            const len = Math.sqrt(dx * dx + dyVal * dyVal + dzVal * dzVal);
+            if (len > 0) {
+              b1.pos[0] = px + (dx / len) * b1.length;
+              b1.pos[1] = (dyVal / len) * b1.length;
+              b1.pos[2] = (dzVal / len) * b1.length;
+            }
+            b1.vel = [0, 0, 0];
           } else {
             break;
           }
